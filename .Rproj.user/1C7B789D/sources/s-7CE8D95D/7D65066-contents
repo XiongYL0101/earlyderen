@@ -1,0 +1,3072 @@
+library(GEOquery)
+library(Biobase)
+library(BiocGenerics)
+library(parallel)
+library(cluster)
+library(factoextra)
+library(FactoMineR)
+library(reshape2)
+library(ggplot2)
+library(reshape)
+library(RColorBrewer)
+library(pheatmap)
+library(ConsensusClusterPlus)
+library(dplyr)
+library(reshape)
+library(survival)
+library(survminer)
+library(parallel)
+library(ggplot2)
+library(ggpubr)
+library(magrittr)
+library(umap)
+library(Rtsne)
+library(Seurat)
+library(dplyr)
+library(cluster)
+library(factoextra)
+library(FactoMineR)
+library(factoextra)
+library(reshape2)
+library(ggplot2)
+library(GSVA)
+library(GSEABase)
+library(msigdbr)
+library(clusterProfiler)
+options(connectionObserver = NULL)
+library(org.Hs.eg.db)
+library(enrichplot)
+library(limma)
+library(edgeR)
+library(RColorBrewer)
+library(pheatmap)
+library(AnnotationDbi)
+library(reshape)
+library(reshape2)
+library(clusterProfiler)
+library(DESeq2)
+library(maftools)
+library(TCGAmutations)
+library(tidyr)
+library(ggpubr)
+library(ggthemes)
+library(glmnet)
+library(Matrix)
+library(ggcorrplot)
+library(ggplot2)
+library(FactoMineR)
+library(cluster)
+library(factoextra)
+library(pROC)
+options(digits=22)
+library(tidyverse)
+library(sva)
+library(descriptr)
+Sys.setenv("VROOM_CONNECTION_SIZE"=99999999)
+library(devtools)
+set.seed(20220525)
+getwd()
+setwd("D:/data/data16")
+
+
+lR1<-read.table("NSCLC all lasso newo.csv",
+                sep=",",header=TRUE,stringsAsFactors=FALSE)
+g1<-subset(lR1,Histology=="AD",select=c(1:17)) ##2484
+
+
+table(g1$pStage)
+g1$pstage1[g1$pStage=="IA"]<-"IA"
+g1$pstage1[g1$pStage=="IB"|
+             g1$pStage=="II"|
+             g1$pStage=="IIA"|
+             g1$pStage=="IIB"]<-"IB-II"
+g1$pstage1[g1$pStage=="III"|
+             g1$pStage=="IIIA"|
+             g1$pStage=="IIIB"]<-"III"
+g1$pstage1[g1$pStage=="IV"]<-"IV"
+
+table(g1$pstage1)##IA IB-II   III    IV 845  1177   345    51
+
+g1$OS.time<-as.numeric(g1$OS.time)
+g1$OS.status<-as.numeric(g1$OS.status)
+g1$PFS.time<-as.numeric(g1$PFS.time)
+g1$PFS.status<-as.numeric(g1$PFS.status)
+
+options(digits=3)
+
+
+
+
+##5 year
+LUAD5<-subset(g1,g1$pstage1=="IA",select=c(1:18))
+LUAD5$Typesur[LUAD5$OS.time > 60]<-"Low risk"
+LUAD5$Typesur[LUAD5$OS.time < 60 & LUAD5$OS.status=="1"]<-"High risk"
+LUAD5$Typesur[LUAD5$OS.time < 60 & LUAD5$OS.status=="0"]<-"Unknow"
+table(LUAD5$Typesur)
+table(LUAD5$Dataset,LUAD5$Typesur)
+
+
+zhe1<-subset(LUAD5,LUAD5$Typesur!="Unknow",select=c(1:19))
+
+zhe2<-roc(zhe1$Typesur,zhe1$LAS)
+auc(zhe2)###  Area under the curve: 0.933
+ci(zhe2)#95% CI: 0.909-0.957 (DeLong)
+plot(zhe2,print.auc=FALSE, auc.polygon=TRUE, max.auc.polygon=TRUE,
+     auc.polygon.col="#F08080", print.thres=TRUE,font=2,
+     main="",cex.main=2,
+     font.lab=2,font.axis=2,cex.lab=1.8,cex.axis=1.4)
+dev.off()
+
+
+
+
+library(rms)
+library(Hmisc)
+library(lattice)
+library(Formula)
+library(grid)
+no1<-zhe1
+no1$Typesura1[no1$Typesur=="High risk"]<-1
+no1$Typesura1[no1$Typesur=="Low risk"]<-0
+ddist<-datadist(no1)
+options(datadist="ddist")
+fa<-glm(Typesura1 ~ LAS,data=no1,family=binomial(link='logit'))
+summary(fa)
+##模型的显著性检验
+anova(fa,test="Chisq")
+
+##模型的拟合优度检验：通过比较模型的预测值与实际值之间的差异情况来进行检验，如果预测值域实际值越接近，则说明模型的拟合优度越佳
+
+install.packages("sjmisc")
+install.packages("ResourceSelection")
+library(sjmisc)
+library(ResourceSelection)
+help("sjmisc")
+
+fb<-hoslem.test(no1$Typesura1,fitted(fa),g=10)
+fb
+help(hoslem.test)
+
+cbind(fb$observed,fb$expected)
+
+pr.e<-predict(fa,no1,type = c("response"))#得出预测概率
+##预测校准图
+
+
+##ROC曲线
+library(pROC)
+pr<- predict(fa,newdata=no1,type = c("response"))
+pr2<-predict(fa,data=no1,type=c("response"))
+roccurve1 <- roc(no1$Typesura1 ~ pr2)
+auc(roccurve1)
+plot.roc(roccurve1,xlim = c(1,0),ylim=c(0,1))
+
+
+
+
+f<-lrm(Typesura1 ~ LAS,data=no1)
+f
+###fun=function(x)1/(1+exp(-x))等于fun=plogis
+nom<-nomogram(f,fun=plogis,fun.at=c(0.001,0.1,0.5,0.99),
+              lp=F,funlabel="Risk")
+par(font.axis=2,font.lab=2,font.main=2,cex.lab=1.2,cex.main=1.2,cex.axis=1,family="")
+
+plot(nom)
+pdf("LUAD IA score un logistic r2.pdf",width=5.5, height=3)
+p<-plot(nom,xfrac=0.2,cex.var=0.8,font.var=2,col.grid=gray(c(0.8, 0.95)))
+p
+dev.off()
+
+pdf("LUAD IA score un logistic cal r2.pdf",width=5, height=5)
+f1<-lrm(Typesura1 ~ LAS,data=no1,x=TRUE,y=TRUE)
+f1
+cal<-calibrate(f1,method="boot",B=1000)
+par(mar=c(8,5,3,2),cex=1.0)
+A<-plot(cal,
+        xlab="Predicted Probability",
+        ylab="Actual Probability",
+        subtitles=FALSE,
+        font.lab=2,cex.lab=1,font.axis=2,cex.axis=0.8)
+dev.off()
+A2<-plot(cal,xlim=c(0,0.8),ylim=c(0,0.8),
+         xlab="Predicted Probability",
+         ylab="Actual Probability",
+         subtitles=FALSE,
+         font.lab=2,cex.lab=1,font.axis=2,cex.axis=0.8)
+
+##多种验证
+library(bootstrap)
+shrinkage <- function(fit, k=10){  
+  require(bootstrap)
+  theta.fit <- function(x,y){lsfit(x,y)}  
+  theta.predict <- function(fit,x){cbind(1,x)%*%fit$coef}
+  x <- fit$model[,2:ncol(fit$model)]  
+  y <- fit$model[,1]
+  results <- crossval(x, y, theta.fit, theta.predict, ngroup=k)  
+  r2 <- cor(y, fit$fitted.values)^2  
+  r2cv <- cor(y, results$cv.fit)^2  
+  cat("Original R-square =", r2, "n") 
+  cat(k, "Fold Cross-Validated R-square =", r2cv, "n")  
+  cat("Change =", r2-r2cv, "n")
+}
+shrinkage(fa)
+
+
+##多因素：
+all<-no1
+table(no1$Smoking)
+all$pGender[all$Gender=="F"]<-"1F"
+all$pGender[all$Gender=="M"]<-"0M"
+all$pAge<-as.numeric(all$Age)
+all$pTP53[all$TP53=="Mut"]<-"1Mut"
+all$pTP53[all$TP53 %in% c("Wt","WT")]<-"0WT"
+all$pKRAS[all$KRAS=="Mut"]<-"1Mut"
+all$pKRAS[all$KRAS %in% c("Wt","WT")]<-"0WT"
+all$pEGFR[all$EGFR=="Mut"]<-"1Mut"
+all$pEGFR[all$EGFR %in% c("Wt","WT")]<-"0WT"
+
+##为了后文必须numric
+all<-no1
+all$pGender[all$Gender=="F"]<-1
+all$pGender[all$Gender=="M"]<-0
+all$pAge<-as.numeric(all$Age)
+all$pTP53[all$TP53=="Mut"]<-1
+all$pTP53[all$TP53 %in% c("Wt","WT")]<-0
+all$pKRAS[all$KRAS=="Mut"]<-1
+all$pKRAS[all$KRAS %in% c("Wt","WT")]<-0
+all$pEGFR[all$EGFR=="Mut"]<-1
+all$pEGFR[all$EGFR %in% c("Wt","WT")]<-0
+
+all$pTP53<-as.numeric(all$pTP53)
+all$Smoking<-as.numeric(all$Smoking)
+all$pGender<-as.numeric(all$pGender)
+
+
+
+no1<-all
+no1$Typesura1[no1$Typesur=="High risk"]<-1
+no1$Typesura1[no1$Typesur=="Low risk"]<-0
+ddist<-datadist(no1)
+options(datadist="ddist")
+fa1<-glm(Typesura1 ~ LAS+pGender+Smoking+pAge+pTP53+
+          pKRAS+pEGFR,data=no1,family=binomial(link='logit'))
+
+summary(fa1)
+
+##模型的显著性检验
+anova(fa1,test="Chisq")
+
+
+
+
+
+f<-lrm(Typesura1 ~ LAS+pGender+Smoking+pAge+pTP53+
+         pKRAS+pEGFR,data=no1)
+f
+
+
+###fun=function(x)1/(1+exp(-x))等于fun=plogis
+nom<-nomogram(f,fun=plogis,fun.at=c(0.001,0.1,0.5,0.99),
+              lp=F,funlabel="Risk")
+par(font.axis=2,font.lab=2,font.main=2,cex.lab=1.2,cex.main=1.2,cex.axis=1,family="")
+
+plot(nom)
+
+pdf("LUAD IA score mul logistic r2.pdf",width=8, height=6)
+p<-plot(nom,xfrac=0.2,cex.var=0.8,font.var=2,col.grid=gray(c(0.8, 0.95)))
+p
+dev.off()
+
+pdf("LUAD IA score mul logistic cal r2.pdf",width=5, height=5)
+f1<-lrm(Typesura1 ~LAS+pGender+Smoking+pAge+pTP53+
+          pKRAS+pEGFR,data=no1,x=TRUE,y=TRUE)
+f1
+cal<-calibrate(f1,method="boot",B=1000)
+par(mar=c(8,5,3,2),cex=1.0)
+A<-plot(cal,
+        xlab="Predicted Probability",
+        ylab="Actual Probability",
+        subtitles=FALSE,
+        font.lab=2,cex.lab=1,font.axis=2,cex.axis=0.8)
+dev.off()
+A2<-plot(cal,xlim=c(0,0.8),ylim=c(0,0.8),
+         xlab="Predicted Probability",
+         ylab="Actual Probability",
+         subtitles=FALSE,
+         font.lab=2,cex.lab=1,font.axis=2,cex.axis=0.8)
+
+
+###
+anova(fa,fa1)
+AIC(fa,fa1)
+
+##
+library(MASS)
+stepAIC(fa1,direction="backward")
+stepAIC(fa1,direction="forward")
+
+##
+
+
+
+
+###选择(1)LAS+Smoking+pAge+pGender
+install.packages("leaps")
+library(leaps)
+par(font.axis=2,font.lab=2,font.main=2,cex.lab=1.2,cex.main=1.2,cex.axis=1,family="")
+pdf("LUAD IA score mul logistic filatra r2.pdf",width=4, height=4)
+
+faq1<-regsubsets(Typesura1 ~ LAS+pGender+Smoking+pAge,data=no1,nbest=2)
+
+plot(faq1,scale="adjr2")
+dev.off()
+
+fa1a<-glm(Typesura1 ~ LAS+Smoking+pAge+pGender,data=no1,family=binomial(link='logit'))
+
+
+summary(fa1a)
+anova(fa,fa1a)
+AIC(fa,fa1a)
+##模型的显著性检验
+anova(fa1a,test="Chisq")
+
+
+
+
+f<-lrm(Typesura1 ~ LAS+Smoking+pAge+pGender,data=no1)
+f
+###fun=function(x)1/(1+exp(-x))等于fun=plogis
+nom<-nomogram(f,fun=plogis,fun.at=c(0.001,0.1,0.5,0.99),
+              lp=F,funlabel="Risk")
+par(font.axis=2,font.lab=2,font.main=2,cex.lab=1.2,cex.main=1.2,cex.axis=1,family="")
+
+plot(nom)
+
+pdf("LUAD IA score mul logisticc four r2.pdf",width=6, height=6)
+p<-plot(nom,xfrac=0.2,cex.var=0.8,font.var=2,col.grid=gray(c(0.8, 0.95)))
+p
+dev.off()
+
+pdf("LUAD IA score mul logistic cal four r2.pdf",width=5, height=5)
+f1<-lrm(Typesura1 ~LAS+Smoking+pAge+pTP53,data=no1,x=TRUE,y=TRUE)
+f1
+cal<-calibrate(f1,method="boot",B=1000)
+par(mar=c(8,5,3,2),cex=1.0)
+A<-plot(cal,
+        xlab="Predicted Probability",
+        ylab="Actual Probability",
+        subtitles=FALSE,
+        font.lab=2,cex.lab=1,font.axis=2,cex.axis=0.8)
+dev.off()
+A2<-plot(cal,xlim=c(0,0.8),ylim=c(0,0.8),
+         xlab="Predicted Probability",
+         ylab="Actual Probability",
+         subtitles=FALSE,
+         font.lab=2,cex.lab=1,font.axis=2,cex.axis=0.8)
+
+
+###
+anova(fa1,fa1a)
+AIC(fa1,fa1a)
+
+install.packages("car")
+library(car)
+subsets(faq1,statistic="cp",main="IA SCORE")
+abline(1,1,lty=2,col="red")
+
+###交叉验证
+install.packages("bootstrap")
+library(bootstrap)
+shrinkage <- function(fit, k=10){  
+  require(bootstrap)
+  theta.fit <- function(x,y){lsfit(x,y)}  
+  theta.predict <- function(fit,x){cbind(1,x)%*%fit$coef}
+  x <- fit$model[,2:ncol(fit$model)]  
+  y <- fit$model[,1]
+  results <- crossval(x, y, theta.fit, theta.predict, ngroup=k)  
+  r2 <- cor(y, fit$fitted.values)^2  
+  r2cv <- cor(y, results$cv.fit)^2  
+  cat("Original R-square =", r2, "n") 
+  cat(k, "Fold Cross-Validated R-square =", r2cv, "n")  
+  cat("Change =", r2-r2cv, "n")
+  }
+shrinkage(fa1a)
+
+
+
+##相对重要性
+install.packages("relaimpo")
+library(relaimpo)
+
+relweights <- function(fit,...){
+  R <- cor(fit$model)   
+  nvar <- ncol(R)    
+  rxx <- R[2:nvar, 2:nvar] 
+  rxy <- R[2:nvar, 1]    
+  svd <- eigen(rxx)    
+  evec <- svd$vectors   
+  ev <- svd$values    
+  delta <- diag(sqrt(ev))    
+  lambda <- evec %*% delta %*% t(evec) 
+  lambdasq <- lambda ^ 2   
+  beta <- solve(lambda) %*% rxy  
+  rsquare <- colSums(beta ^ 2)  
+  rawwgt <- lambdasq %*% beta ^ 2
+  import <- (rawwgt / rsquare) * 100
+  lbls <- names(fit$model[2:nvar])  
+  rownames(import)<- lbls
+  colnames(import) <- "Weights"
+ barplot(t(import),names.arg=lbls,
+          ylab="% of R-Square",
+          xlab="Relative Importance of Predictor Variables",     
+           main="Relative Importance of Predictor Variables",  
+           sub=paste("Total R-Square=", round(rsquare, digits=3)),   
+           ...)
+  return(import)
+ }
+
+pdf("LUAD IA score mul logistic relative four r2.pdf",width=4.3, height=4)
+relweights(fa1a,col="lightgray")
+dev.off()
+
+##决策曲线
+
+library(rmda)
+ju1<-no1
+###study.design = 'case-control'   population.prevalence = 0.25(IA 五年死亡率)
+simple<- decision_curve(Typesura1~LAS,data= ju1,
+                        family = binomial(link ='logit'),
+                        thresholds= seq(0,1, by = 0.01),
+                        study.design = 'case-control',
+                        confidence.intervals = 0.95,
+                        population.prevalence = 0.25)
+
+complex<-decision_curve(Typesura1 ~ pGender+Smoking+pAge,data = ju1,family = binomial(link ='logit'),
+                        thresholds = seq(0,1, by = 0.01),
+                        confidence.intervals= 0.95,
+                        study.design = 'case-control',
+                        population.prevalence= 0.25)
+
+complex1<-decision_curve(Typesura1 ~ LAS+pGender+Smoking+pAge,data = ju1,family = binomial(link ='logit'),
+                        thresholds = seq(0,1, by = 0.01),
+                        confidence.intervals= 0.95,
+                        study.design = 'case-control',
+                        population.prevalence= 0.25)
+
+
+
+List<- list(simple,complex,complex1)
+help(plot_decision_curve)
+
+pdf("LUAD IA classcal pre 1.pdf",width=4.5, height=4)
+par(font.axis=2,font.lab=2,
+    font.main=2,cex.lab=1.2,cex.main=1.2,cex.axis=1,family="")
+dec1<-plot_decision_curve(List,
+                    curve.names=c('IAscore','classica',"IAscore+classica"),
+                    cost.benefit.axis =FALSE,col= c("#F08080","#EED5D2","#BFEFFF"),
+                    confidence.intervals=FALSE,
+                    standardize = FALSE,
+                    legend.position="topright")
+
+dec1
+dev.off()
+
+pdf("LUAD IA classcal pre 2.pdf",width=4.5, height=4)
+dec2<-plot_decision_curve(List,
+                          curve.names=c('IAscore','classica',"IAscore+classica"),
+                          cost.benefit.axis =FALSE,col= c("#F08080","#EED5D2","#BFEFFF"),
+                          confidence.intervals=FALSE,
+                          standardize = FALSE,
+                          legend.position="none")
+
+dec2
+dev.off()
+
+
+pdf("LUAD IA score pre.pdf",width=4.5, height=4)
+par(font.axis=2,font.lab=2,
+    font.main=2,cex.lab=1.2,cex.main=1.2,cex.axis=1,family="")
+plot_clinical_impact(simple,population.size= 1000,
+                     cost.benefit.axis = T,
+                     n.cost.benefits= 8,
+                     col =c("#F08080","#696969"),
+                     confidence.intervals= T,
+                     ylim=c(0,1000),
+                     legend.position="topright")
+
+dev.off()
+
+
+###
+
+###选择(1)LAS+pTP53+pKRAS+pEGFR
+library(leaps)
+par(font.axis=2,font.lab=2,font.main=2,cex.lab=1.2,cex.main=1.2,cex.axis=1,family="")
+pdf("LUAD IA score mul logistic filatra mole r2.pdf",width=4, height=4)
+
+faq1<-regsubsets(Typesura1 ~ LAS+pTP53+pKRAS+pEGFR,data=no1,nbest=2)
+
+plot(faq1,scale="adjr2")
+dev.off()
+
+fa1ap<-glm(Typesura1 ~ LAS+pTP53+pKRAS+pEGFR,data=no1,family=binomial(link='logit'))
+
+
+summary(fa1ap)
+anova(fa,fa1ap)
+AIC(fa,fa1ap)
+##模型的显著性检验
+anova(fa1a,test="Chisq")
+
+
+
+
+fp<-lrm(Typesura1 ~  LAS+pTP53+pKRAS+pEGFR,data=no1)
+fp
+###fun=function(x)1/(1+exp(-x))等于fun=plogis
+nomp<-nomogram(fp,fun=plogis,fun.at=c(0.001,0.1,0.5,0.99),
+              lp=F,funlabel="Risk")
+par(font.axis=2,font.lab=2,font.main=2,cex.lab=1.2,cex.main=1.2,cex.axis=1,family="")
+
+plot(nomp)
+
+pdf("LUAD IA score mul logisticc mole r2.pdf",width=6, height=6)
+p<-plot(nomp,xfrac=0.2,cex.var=0.8,font.var=2,col.grid=gray(c(0.8, 0.95)))
+p
+dev.off()
+
+pdf("LUAD IA score mul logistic cal mole r2.pdf",width=5, height=5)
+f1<-lrm(Typesura1 ~LAS+pTP53+pKRAS+pEGFR,data=no1,x=TRUE,y=TRUE)
+f1
+cal<-calibrate(f1,method="boot",B=1000)
+par(mar=c(8,5,3,2),cex=1.0)
+A<-plot(cal,
+        xlab="Predicted Probability",
+        ylab="Actual Probability",
+        subtitles=FALSE,
+        font.lab=2,cex.lab=1,font.axis=2,cex.axis=0.8)
+dev.off()
+A2<-plot(cal,xlim=c(0,0.8),ylim=c(0,0.8),
+         xlab="Predicted Probability",
+         ylab="Actual Probability",
+         subtitles=FALSE,
+         font.lab=2,cex.lab=1,font.axis=2,cex.axis=0.8)
+
+
+###
+anova(fa1,fa1a)
+AIC(fa1,fa1a)
+
+
+###交叉验证
+install.packages("bootstrap")
+library(bootstrap)
+shrinkage <- function(fit, k=10){  
+  require(bootstrap)
+  theta.fit <- function(x,y){lsfit(x,y)}  
+  theta.predict <- function(fit,x){cbind(1,x)%*%fit$coef}
+  x <- fit$model[,2:ncol(fit$model)]  
+  y <- fit$model[,1]
+  results <- crossval(x, y, theta.fit, theta.predict, ngroup=k)  
+  r2 <- cor(y, fit$fitted.values)^2  
+  r2cv <- cor(y, results$cv.fit)^2  
+  cat("Original R-square =", r2, "n") 
+  cat(k, "Fold Cross-Validated R-square =", r2cv, "n")  
+  cat("Change =", r2-r2cv, "n")
+}
+shrinkage(fa1ap)
+
+
+
+##相对重要性
+install.packages("relaimpo")
+library(relaimpo)
+
+relweights <- function(fit,...){
+  R <- cor(fit$model)   
+  nvar <- ncol(R)    
+  rxx <- R[2:nvar, 2:nvar] 
+  rxy <- R[2:nvar, 1]    
+  svd <- eigen(rxx)    
+  evec <- svd$vectors   
+  ev <- svd$values    
+  delta <- diag(sqrt(ev))    
+  lambda <- evec %*% delta %*% t(evec) 
+  lambdasq <- lambda ^ 2   
+  beta <- solve(lambda) %*% rxy  
+  rsquare <- colSums(beta ^ 2)  
+  rawwgt <- lambdasq %*% beta ^ 2
+  import <- (rawwgt / rsquare) * 100
+  lbls <- names(fit$model[2:nvar])  
+  rownames(import)<- lbls
+  colnames(import) <- "Weights"
+  barplot(t(import),names.arg=lbls,
+          ylab="% of R-Square",
+          xlab="Relative Importance of Predictor Variables",     
+          main="Relative Importance of Predictor Variables",  
+          sub=paste("Total R-Square=", round(rsquare, digits=3)),   
+          ...)
+  return(import)
+}
+
+pdf("LUAD IA score mul logistic relative mole r2.pdf",width=4.3, height=4)
+relweights(fa1ap,col="lightgray")
+dev.off()
+
+##决策曲线
+
+library(rmda)
+ju1<-no1
+###study.design = 'case-control'   population.prevalence = 0.25(IA 五年死亡率)
+simple<- decision_curve(Typesura1~LAS,data= ju1,
+                        family = binomial(link ='logit'),
+                        thresholds= seq(0,1, by = 0.01),
+                        study.design = 'case-control',
+                        confidence.intervals = 0.95,
+                        population.prevalence = 0.25)
+
+complex<-decision_curve(Typesura1 ~ pTP53+pKRAS+pEGFR,data = ju1,family = binomial(link ='logit'),
+                        thresholds = seq(0,1, by = 0.01),
+                        confidence.intervals= 0.95,
+                        study.design = 'case-control',
+                        population.prevalence= 0.25)
+
+complex1<-decision_curve(Typesura1 ~ LAS+pTP53+pKRAS+pEGFR,data = ju1,family = binomial(link ='logit'),
+                         thresholds = seq(0,1, by = 0.01),
+                         confidence.intervals= 0.95,
+                         study.design = 'case-control',
+                         population.prevalence= 0.25)
+
+
+
+List<- list(simple,complex,complex1)
+
+
+pdf("LUAD IA classcal pre mole1.pdf",width=4.5, height=4)
+par(font.axis=2,font.lab=2,
+    font.main=2,cex.lab=1.2,cex.main=1.2,cex.axis=1,family="")
+dec1<-plot_decision_curve(List,
+                          curve.names=c('IAscore','mole',"IAscore+mole"),
+                          cost.benefit.axis =FALSE,col= c("#F08080","#EED5D2","#BFEFFF"),
+                          confidence.intervals=FALSE,
+                          standardize = FALSE,
+                          legend.position="topright")
+
+dec1
+dev.off()
+
+pdf("LUAD IA classcal pre mole2.pdf",width=4.5, height=4)
+dec2<-plot_decision_curve(List,
+                          curve.names=c('IAscore','mole',"IAscore+mole"),
+                          cost.benefit.axis =FALSE,col= c("#F08080","#EED5D2","#BFEFFF"),
+                          confidence.intervals=FALSE,
+                          standardize = FALSE,
+                          legend.position="none")
+
+dec2
+dev.off()
+
+
+pdf("LUAD IA score pre mole.pdf",width=4.5, height=4)
+par(font.axis=2,font.lab=2,
+    font.main=2,cex.lab=1.2,cex.main=1.2,cex.axis=1,family="")
+plot_clinical_impact(simple,population.size= 1000,
+                     cost.benefit.axis = T,
+                     n.cost.benefits= 8,
+                     col =c("#F08080","#696969"),
+                     confidence.intervals= T,
+                     ylim=c(0,1000),
+                     legend.position="topright")
+
+dev.off()
+
+
+
+
+###3 year
+
+
+lR1<-read.table("NSCLC all lasso newo.csv",
+                sep=",",header=TRUE,stringsAsFactors=FALSE)
+g1<-subset(lR1,Histology=="AD",select=c(1:17)) ##2484
+
+
+table(g1$pStage)
+g1$pstage1[g1$pStage=="IA"]<-"IA"
+g1$pstage1[g1$pStage=="IB"|
+             g1$pStage=="II"|
+             g1$pStage=="IIA"|
+             g1$pStage=="IIB"]<-"IB-II"
+g1$pstage1[g1$pStage=="III"|
+             g1$pStage=="IIIA"|
+             g1$pStage=="IIIB"]<-"III"
+g1$pstage1[g1$pStage=="IV"]<-"IV"
+
+table(g1$pstage1)##IA IB-II   III    IV 845  1177   345    51
+
+g1$OS.time<-as.numeric(g1$OS.time)
+g1$OS.status<-as.numeric(g1$OS.status)
+g1$PFS.time<-as.numeric(g1$PFS.time)
+g1$PFS.status<-as.numeric(g1$PFS.status)
+
+options(digits=3)
+
+
+
+
+##3 year
+LUAD5<-subset(g1,g1$pstage1=="IA",select=c(1:18))
+LUAD5$Typesur[LUAD5$OS.time > 36]<-"Low risk"
+LUAD5$Typesur[LUAD5$OS.time < 36 & LUAD5$OS.status=="1"]<-"High risk"
+LUAD5$Typesur[LUAD5$OS.time < 36 & LUAD5$OS.status=="0"]<-"Unknow"
+table(LUAD5$Typesur)
+table(LUAD5$Dataset,LUAD5$Typesur)
+table(LUAD5$Typesur)
+table(LUAD5$Dataset,LUAD5$Typesur)
+
+
+zhe1<-subset(LUAD5,LUAD5$Typesur!="Unknow",select=c(1:19))
+###为了后文一致作图
+zhe23<-roc(zhe1$Typesur,zhe1$LAS)
+zhe2<-roc(zhe1$Typesur,zhe1$LAS)
+auc(zhe2)###  Area under the curve: 0.854
+ci(zhe2)###95% CI: 0.820-0.889 (DeLong)
+zhe2<-roc(zhe1$Typesur,zhe1$LAS)
+pdf("LUAD IA score 3 year z.pdf",width=5, height=5)
+plot(zhe2,print.auc=FALSE, auc.polygon=TRUE, max.auc.polygon=TRUE,
+     auc.polygon.col="#EED5D2", print.thres=TRUE,font=2,
+     main="",cex.main=2,
+     font.lab=2,font.axis=2,cex.lab=1.8,cex.axis=1.4)
+text(0.45,0.1,"AUC:0.854 \n 95% CI: 0.820-0.889",
+     cex=1.6,font=2)
+dev.off()
+
+
+library(rms)
+library(Hmisc)
+library(lattice)
+library(Formula)
+library(grid)
+no1<-zhe1
+no1$Typesura1[no1$Typesur=="High risk"]<-1
+no1$Typesura1[no1$Typesur=="Low risk"]<-0
+ddist<-datadist(no1)
+options(datadist="ddist")
+fa<-glm(Typesura1 ~ LAS,data=no1,family=binomial(link='logit'))
+summary(fa)
+
+
+
+f<-lrm(Typesura1 ~ LAS,data=no1)
+f
+###fun=function(x)1/(1+exp(-x))等于fun=plogis
+options(digits=6)
+nom<-nomogram(f,fun=plogis,fun.at=c(0.001,0.1,0.5,0.99),
+              lp=F,funlabel="Risk")
+par(font.axis=2,font.lab=2,font.main=2,cex.lab=1.2,cex.main=1.2,cex.axis=1,family="")
+
+plot(nom)
+pdf("LUAD IA score 3un logistic r2.pdf",width=5.5, height=3)
+p<-plot(nom,xfrac=0.2,cex.var=0.8,font.var=2,col.grid=gray(c(0.8, 0.95)))
+p
+dev.off()
+
+pdf("LUAD IA score 3un logistic cal r2.pdf",width=5, height=5)
+f1<-lrm(Typesura1 ~ LAS,data=no1,x=TRUE,y=TRUE)
+f1
+cal<-calibrate(f1,method="boot",B=1000)
+par(mar=c(8,5,3,2),cex=1.0)
+A<-plot(cal,
+        xlab="Predicted Probability",
+        ylab="Actual Probability",
+        subtitles=FALSE,
+        font.lab=2,cex.lab=1,font.axis=2,cex.axis=0.8)
+dev.off()
+
+
+##多种验证
+library(bootstrap)
+shrinkage <- function(fit, k=10){  
+  require(bootstrap)
+  theta.fit <- function(x,y){lsfit(x,y)}  
+  theta.predict <- function(fit,x){cbind(1,x)%*%fit$coef}
+  x <- fit$model[,2:ncol(fit$model)]  
+  y <- fit$model[,1]
+  results <- crossval(x, y, theta.fit, theta.predict, ngroup=k)  
+  r2 <- cor(y, fit$fitted.values)^2  
+  r2cv <- cor(y, results$cv.fit)^2  
+  cat("Original R-square =", r2, "n") 
+  cat(k, "Fold Cross-Validated R-square =", r2cv, "n")  
+  cat("Change =", r2-r2cv, "n")
+}
+shrinkage(fa)
+
+#多因素：
+all<-no1
+table(no1$Smoking)
+all$pGender[all$Gender=="F"]<-"1F"
+all$pGender[all$Gender=="M"]<-"0M"
+all$pAge<-as.numeric(all$Age)
+all$pTP53[all$TP53=="Mut"]<-"1Mut"
+all$pTP53[all$TP53 %in% c("Wt","WT")]<-"0WT"
+all$pKRAS[all$KRAS=="Mut"]<-"1Mut"
+all$pKRAS[all$KRAS %in% c("Wt","WT")]<-"0WT"
+all$pEGFR[all$EGFR=="Mut"]<-"1Mut"
+all$pEGFR[all$EGFR %in% c("Wt","WT")]<-"0WT"
+
+##为了后文必须numric
+all<-no1
+all$pGender[all$Gender=="F"]<-1
+all$pGender[all$Gender=="M"]<-0
+all$pAge<-as.numeric(all$Age)
+all$pTP53[all$TP53=="Mut"]<-1
+all$pTP53[all$TP53 %in% c("Wt","WT")]<-0
+all$pKRAS[all$KRAS=="Mut"]<-1
+all$pKRAS[all$KRAS %in% c("Wt","WT")]<-0
+all$pEGFR[all$EGFR=="Mut"]<-1
+all$pEGFR[all$EGFR %in% c("Wt","WT")]<-0
+
+all$pTP53<-as.numeric(all$pTP53)
+all$Smoking<-as.numeric(all$Smoking)
+all$pGender<-as.numeric(all$pGender)
+
+no1<-all
+no1$Typesura1[no1$Typesur=="High risk"]<-1
+no1$Typesura1[no1$Typesur=="Low risk"]<-0
+ddist<-datadist(no1)
+options(datadist="ddist")
+
+###选择(1)LAS+Smoking+pAge+pGender
+
+library(leaps)
+par(font.axis=2,font.lab=2,font.main=2,cex.lab=1.2,cex.main=1.2,cex.axis=1,family="")
+pdf("LUAD IA score mul logistic filatra r2 3years.pdf",width=4, height=4)
+
+faq1<-regsubsets(Typesura1 ~ LAS+pGender+Smoking+pAge,data=no1,nbest=2)
+
+plot(faq1,scale="adjr2")
+dev.off()
+
+fa1a<-glm(Typesura1 ~ LAS+Smoking+pAge+pGender,data=no1,family=binomial(link='logit'))
+
+summary(fa1a)
+AIC(fa,fa1a)
+
+
+###交叉验证
+library(bootstrap)
+shrinkage <- function(fit, k=10){  
+  require(bootstrap)
+  theta.fit <- function(x,y){lsfit(x,y)}  
+  theta.predict <- function(fit,x){cbind(1,x)%*%fit$coef}
+  x <- fit$model[,2:ncol(fit$model)]  
+  y <- fit$model[,1]
+  results <- crossval(x, y, theta.fit, theta.predict, ngroup=k)  
+  r2 <- cor(y, fit$fitted.values)^2  
+  r2cv <- cor(y, results$cv.fit)^2  
+  cat("Original R-square =", r2, "n") 
+  cat(k, "Fold Cross-Validated R-square =", r2cv, "n")  
+  cat("Change =", r2-r2cv, "n")
+}
+shrinkage(fa1a)
+
+
+##相对重要性
+library(relaimpo)
+
+relweights <- function(fit,...){
+  R <- cor(fit$model)   
+  nvar <- ncol(R)    
+  rxx <- R[2:nvar, 2:nvar] 
+  rxy <- R[2:nvar, 1]    
+  svd <- eigen(rxx)    
+  evec <- svd$vectors   
+  ev <- svd$values    
+  delta <- diag(sqrt(ev))    
+  lambda <- evec %*% delta %*% t(evec) 
+  lambdasq <- lambda ^ 2   
+  beta <- solve(lambda) %*% rxy  
+  rsquare <- colSums(beta ^ 2)  
+  rawwgt <- lambdasq %*% beta ^ 2
+  import <- (rawwgt / rsquare) * 100
+  lbls <- names(fit$model[2:nvar])  
+  rownames(import)<- lbls
+  colnames(import) <- "Weights"
+  barplot(t(import),names.arg=lbls,
+          ylab="% of R-Square",
+          xlab="Relative Importance of Predictor Variables",     
+          main="Relative Importance of Predictor Variables",  
+          sub=paste("Total R-Square=", round(rsquare, digits=3)),   
+          ...)
+  return(import)
+}
+
+pdf("LUAD IA score mul logistic relative four r2 3years.pdf",width=4.3, height=4)
+relweights(fa1a,col="lightgray")
+dev.off()
+
+##决策曲线
+library(rmda)
+ju1<-no1
+###study.design = 'case-control'   population.prevalence = 0.17(IA 3年死亡率)
+simple<- decision_curve(Typesura1~LAS,data= ju1,
+                        family = binomial(link ='logit'),
+                        thresholds= seq(0,1, by = 0.01),
+                        study.design = 'case-control',
+                        confidence.intervals = 0.95,
+                        population.prevalence = 0.17)
+
+complex<-decision_curve(Typesura1 ~ pGender+Smoking+pAge,data = ju1,family = binomial(link ='logit'),
+                        thresholds = seq(0,1, by = 0.01),
+                        confidence.intervals= 0.95,
+                        study.design = 'case-control',
+                        population.prevalence= 0.17)
+
+complex1<-decision_curve(Typesura1 ~ LAS+pGender+Smoking+pAge,data = ju1,family = binomial(link ='logit'),
+                         thresholds = seq(0,1, by = 0.01),
+                         confidence.intervals= 0.95,
+                         study.design = 'case-control',
+                         population.prevalence= 0.17)
+
+
+
+List<- list(simple,complex,complex1)
+
+
+pdf("LUAD IA classcal pre 2 3years.pdf",width=4.5, height=4)
+dec2<-plot_decision_curve(List,
+                          curve.names=c('IAscore','classica',"IAscore+classica"),
+                          cost.benefit.axis =FALSE,col= c("#F08080","#EED5D2","#BFEFFF"),
+                          confidence.intervals=FALSE,
+                          standardize = FALSE,
+                          legend.position="none")
+
+dec2
+dev.off()
+
+
+pdf("LUAD IA score pre 3years.pdf",width=4.5, height=4)
+par(font.axis=2,font.lab=2,
+    font.main=2,cex.lab=1.2,cex.main=1.2,cex.axis=1,family="")
+plot_clinical_impact(simple,population.size= 1000,
+                     cost.benefit.axis = T,
+                     n.cost.benefits= 8,
+                     col =c("#F08080","#696969"),
+                     confidence.intervals= T,
+                     ylim=c(0,1000),
+                     legend.position="topright")
+
+dev.off()
+
+
+###
+
+###选择(1)LAS+pTP53+pKRAS+pEGFR
+library(leaps)
+par(font.axis=2,font.lab=2,font.main=2,cex.lab=1.2,cex.main=1.2,cex.axis=1,family="")
+pdf("LUAD IA score mul logistic filatra mole r2 3years.pdf",width=4, height=4)
+
+faq1<-regsubsets(Typesura1 ~ LAS+pTP53+pKRAS+pEGFR,data=no1,nbest=2)
+
+plot(faq1,scale="adjr2")
+dev.off()
+
+fa1ap<-glm(Typesura1 ~ LAS+pTP53+pKRAS+pEGFR,data=no1,family=binomial(link='logit'))
+
+AIC(fa,fa1ap)
+
+
+fp<-lrm(Typesura1 ~  LAS+pTP53+pKRAS+pEGFR,data=no1)
+
+###交叉验证
+
+library(bootstrap)
+shrinkage <- function(fit, k=10){  
+  require(bootstrap)
+  theta.fit <- function(x,y){lsfit(x,y)}  
+  theta.predict <- function(fit,x){cbind(1,x)%*%fit$coef}
+  x <- fit$model[,2:ncol(fit$model)]  
+  y <- fit$model[,1]
+  results <- crossval(x, y, theta.fit, theta.predict, ngroup=k)  
+  r2 <- cor(y, fit$fitted.values)^2  
+  r2cv <- cor(y, results$cv.fit)^2  
+  cat("Original R-square =", r2, "n") 
+  cat(k, "Fold Cross-Validated R-square =", r2cv, "n")  
+  cat("Change =", r2-r2cv, "n")
+}
+shrinkage(fa1ap)
+
+
+
+##相对重要性
+
+library(relaimpo)
+
+relweights <- function(fit,...){
+  R <- cor(fit$model)   
+  nvar <- ncol(R)    
+  rxx <- R[2:nvar, 2:nvar] 
+  rxy <- R[2:nvar, 1]    
+  svd <- eigen(rxx)    
+  evec <- svd$vectors   
+  ev <- svd$values    
+  delta <- diag(sqrt(ev))    
+  lambda <- evec %*% delta %*% t(evec) 
+  lambdasq <- lambda ^ 2   
+  beta <- solve(lambda) %*% rxy  
+  rsquare <- colSums(beta ^ 2)  
+  rawwgt <- lambdasq %*% beta ^ 2
+  import <- (rawwgt / rsquare) * 100
+  lbls <- names(fit$model[2:nvar])  
+  rownames(import)<- lbls
+  colnames(import) <- "Weights"
+  barplot(t(import),names.arg=lbls,
+          ylab="% of R-Square",
+          xlab="Relative Importance of Predictor Variables",     
+          main="Relative Importance of Predictor Variables",  
+          sub=paste("Total R-Square=", round(rsquare, digits=3)),   
+          ...)
+  return(import)
+}
+
+pdf("LUAD IA score mul logistic relative mole r2 3years.pdf",width=4.3, height=4)
+relweights(fa1ap,col="lightgray")
+dev.off()
+
+##决策曲线
+
+library(rmda)
+ju1<-no1
+###study.design = 'case-control'   population.prevalence = 0.17(IA 3年死亡率)
+simple<- decision_curve(Typesura1~LAS,data= ju1,
+                        family = binomial(link ='logit'),
+                        thresholds= seq(0,1, by = 0.01),
+                        study.design = 'case-control',
+                        confidence.intervals = 0.95,
+                        population.prevalence = 0.17)
+
+complex<-decision_curve(Typesura1 ~ pTP53+pKRAS+pEGFR,data = ju1,family = binomial(link ='logit'),
+                        thresholds = seq(0,1, by = 0.01),
+                        confidence.intervals= 0.95,
+                        study.design = 'case-control',
+                        population.prevalence= 0.17)
+
+complex1<-decision_curve(Typesura1 ~ LAS+pTP53+pKRAS+pEGFR,data = ju1,family = binomial(link ='logit'),
+                         thresholds = seq(0,1, by = 0.01),
+                         confidence.intervals= 0.95,
+                         study.design = 'case-control',
+                         population.prevalence= 0.17)
+
+
+
+List<- list(simple,complex,complex1)
+
+
+pdf("LUAD IA classcal pre mole2 3years.pdf",width=4.5, height=4)
+dec2<-plot_decision_curve(List,
+                          curve.names=c('IAscore','mole',"IAscore+mole"),
+                          cost.benefit.axis =FALSE,col= c("#F08080","#EED5D2","#BFEFFF"),
+                          confidence.intervals=FALSE,
+                          standardize = FALSE,
+                          legend.position="none")
+
+dec2
+dev.off()
+
+
+pdf("LUAD IA score pre mole 3years.pdf",width=4.5, height=4)
+par(font.axis=2,font.lab=2,
+    font.main=2,cex.lab=1.2,cex.main=1.2,cex.axis=1,family="")
+plot_clinical_impact(simple,population.size= 1000,
+                     cost.benefit.axis = T,
+                     n.cost.benefits= 8,
+                     col =c("#F08080","#696969"),
+                     confidence.intervals= T,
+                     ylim=c(0,1000),
+                     legend.position="topright")
+
+dev.off()
+
+
+
+
+
+
+
+
+
+
+
+
+##1 year
+LUAD5<-subset(g1,g1$pstage1=="IA",select=c(1:18))
+LUAD5$Typesur[LUAD5$OS.time > 12]<-"Low risk"
+LUAD5$Typesur[LUAD5$OS.time < 12 & LUAD5$OS.status=="1"]<-"High risk"
+LUAD5$Typesur[LUAD5$OS.time < 12 & LUAD5$OS.status=="0"]<-"Unknow"
+table(LUAD5$Typesur)
+table(LUAD5$Dataset,LUAD5$Typesur)
+table(LUAD5$Typesur)
+table(LUAD5$Dataset,LUAD5$Typesur)
+
+
+zhe1<-subset(LUAD5,LUAD5$Typesur!="Unknow",select=c(1:19))
+##为了后文统一作图
+zhe21<-roc(zhe1$Typesur,zhe1$LAS)
+zhe2<-roc(zhe1$Typesur,zhe1$LAS)
+auc(zhe2)###  Area under the curve: 0.813
+ci(zhe2)###95% CI: 0.758-0.869 (DeLong)
+zhe2<-roc(zhe1$Typesur,zhe1$LAS)
+pdf("LUAD IA score 1 year z.pdf",width=5, height=5)
+plot(zhe2,print.auc=FALSE, auc.polygon=TRUE, max.auc.polygon=TRUE,
+     auc.polygon.col="#EED5D2", print.thres=TRUE,font=2,
+     main="",cex.main=2,
+     font.lab=2,font.axis=2,cex.lab=1.8,cex.axis=1.4)
+text(0.45,0.1,"AUC:0.813 \n 95% CI: 0.758-0.869",
+     cex=1.6,font=2)
+dev.off()
+
+
+library(rms)
+library(Hmisc)
+library(lattice)
+library(Formula)
+library(grid)
+no1<-zhe1
+no1$Typesura1[no1$Typesur=="High risk"]<-1
+no1$Typesura1[no1$Typesur=="Low risk"]<-0
+ddist<-datadist(no1)
+options(datadist="ddist")
+fa<-glm(Typesura1 ~ LAS,data=no1,family=binomial(link='logit'))
+summary(fa)
+
+
+
+f<-lrm(Typesura1 ~ LAS,data=no1)
+f
+###fun=function(x)1/(1+exp(-x))等于fun=plogis
+options(digits=6)
+nom<-nomogram(f,fun=plogis,fun.at=c(0.001,0.1,0.5,0.99),
+              lp=F,funlabel="Risk")
+par(font.axis=2,font.lab=2,font.main=2,cex.lab=1.2,cex.main=1.2,cex.axis=1,family="")
+
+plot(nom)
+pdf("LUAD IA score 1un logistic r2.pdf",width=5.5, height=3)
+p<-plot(nom,xfrac=0.2,cex.var=0.8,font.var=2,col.grid=gray(c(0.8, 0.95)))
+p
+dev.off()
+
+pdf("LUAD IA score 1un logistic cal r2.pdf",width=5, height=5)
+f1<-lrm(Typesura1 ~ LAS,data=no1,x=TRUE,y=TRUE)
+f1
+cal<-calibrate(f1,method="boot",B=1000)
+par(mar=c(8,5,3,2),cex=1.0)
+A<-plot(cal,
+        xlab="Predicted Probability",
+        ylab="Actual Probability",
+        subtitles=FALSE,
+        font.lab=2,cex.lab=1,font.axis=2,cex.axis=0.8)
+dev.off()
+
+
+##多种验证
+library(bootstrap)
+shrinkage <- function(fit, k=10){  
+  require(bootstrap)
+  theta.fit <- function(x,y){lsfit(x,y)}  
+  theta.predict <- function(fit,x){cbind(1,x)%*%fit$coef}
+  x <- fit$model[,2:ncol(fit$model)]  
+  y <- fit$model[,1]
+  results <- crossval(x, y, theta.fit, theta.predict, ngroup=k)  
+  r2 <- cor(y, fit$fitted.values)^2  
+  r2cv <- cor(y, results$cv.fit)^2  
+  cat("Original R-square =", r2, "n") 
+  cat(k, "Fold Cross-Validated R-square =", r2cv, "n")  
+  cat("Change =", r2-r2cv, "n")
+}
+shrinkage(fa)
+
+#多因素：
+all<-no1
+table(no1$Smoking)
+all$pGender[all$Gender=="F"]<-"1F"
+all$pGender[all$Gender=="M"]<-"0M"
+all$pAge<-as.numeric(all$Age)
+all$pTP53[all$TP53=="Mut"]<-"1Mut"
+all$pTP53[all$TP53 %in% c("Wt","WT")]<-"0WT"
+all$pKRAS[all$KRAS=="Mut"]<-"1Mut"
+all$pKRAS[all$KRAS %in% c("Wt","WT")]<-"0WT"
+all$pEGFR[all$EGFR=="Mut"]<-"1Mut"
+all$pEGFR[all$EGFR %in% c("Wt","WT")]<-"0WT"
+
+##为了后文必须numric
+all<-no1
+all$pGender[all$Gender=="F"]<-1
+all$pGender[all$Gender=="M"]<-0
+all$pAge<-as.numeric(all$Age)
+all$pTP53[all$TP53=="Mut"]<-1
+all$pTP53[all$TP53 %in% c("Wt","WT")]<-0
+all$pKRAS[all$KRAS=="Mut"]<-1
+all$pKRAS[all$KRAS %in% c("Wt","WT")]<-0
+all$pEGFR[all$EGFR=="Mut"]<-1
+all$pEGFR[all$EGFR %in% c("Wt","WT")]<-0
+
+all$pTP53<-as.numeric(all$pTP53)
+all$Smoking<-as.numeric(all$Smoking)
+all$pGender<-as.numeric(all$pGender)
+
+no1<-all
+no1$Typesura1[no1$Typesur=="High risk"]<-1
+no1$Typesura1[no1$Typesur=="Low risk"]<-0
+ddist<-datadist(no1)
+options(datadist="ddist")
+
+###选择(1)LAS+Smoking+pAge+pGender
+
+library(leaps)
+par(font.axis=2,font.lab=2,font.main=2,cex.lab=1.2,cex.main=1.2,cex.axis=1,family="")
+pdf("LUAD IA score mul logistic filatra r2 1years.pdf",width=4, height=4)
+
+faq1<-regsubsets(Typesura1 ~ LAS+pGender+Smoking+pAge,data=no1,nbest=2)
+
+plot(faq1,scale="adjr2")
+dev.off()
+
+fa1a<-glm(Typesura1 ~ LAS+Smoking+pAge+pGender,data=no1,family=binomial(link='logit'))
+
+summary(fa1a)
+AIC(fa,fa1a)
+
+
+###交叉验证
+library(bootstrap)
+shrinkage <- function(fit, k=10){  
+  require(bootstrap)
+  theta.fit <- function(x,y){lsfit(x,y)}  
+  theta.predict <- function(fit,x){cbind(1,x)%*%fit$coef}
+  x <- fit$model[,2:ncol(fit$model)]  
+  y <- fit$model[,1]
+  results <- crossval(x, y, theta.fit, theta.predict, ngroup=k)  
+  r2 <- cor(y, fit$fitted.values)^2  
+  r2cv <- cor(y, results$cv.fit)^2  
+  cat("Original R-square =", r2, "n") 
+  cat(k, "Fold Cross-Validated R-square =", r2cv, "n")  
+  cat("Change =", r2-r2cv, "n")
+}
+shrinkage(fa1a)
+
+
+##相对重要性
+library(relaimpo)
+
+relweights <- function(fit,...){
+  R <- cor(fit$model)   
+  nvar <- ncol(R)    
+  rxx <- R[2:nvar, 2:nvar] 
+  rxy <- R[2:nvar, 1]    
+  svd <- eigen(rxx)    
+  evec <- svd$vectors   
+  ev <- svd$values    
+  delta <- diag(sqrt(ev))    
+  lambda <- evec %*% delta %*% t(evec) 
+  lambdasq <- lambda ^ 2   
+  beta <- solve(lambda) %*% rxy  
+  rsquare <- colSums(beta ^ 2)  
+  rawwgt <- lambdasq %*% beta ^ 2
+  import <- (rawwgt / rsquare) * 100
+  lbls <- names(fit$model[2:nvar])  
+  rownames(import)<- lbls
+  colnames(import) <- "Weights"
+  barplot(t(import),names.arg=lbls,
+          ylab="% of R-Square",
+          xlab="Relative Importance of Predictor Variables",     
+          main="Relative Importance of Predictor Variables",  
+          sub=paste("Total R-Square=", round(rsquare, digits=3)),   
+          ...)
+  return(import)
+}
+
+pdf("LUAD IA score mul logistic relative four r2 1years.pdf",width=4.3, height=4)
+relweights(fa1a,col="lightgray")
+dev.off()
+
+##决策曲线
+library(rmda)
+ju1<-no1
+###study.design = 'case-control'   population.prevalence = 0.04(IA 1年死亡率)
+simple<- decision_curve(Typesura1~LAS,data= ju1,
+                        family = binomial(link ='logit'),
+                        thresholds= seq(0,1, by = 0.01),
+                        study.design = 'case-control',
+                        confidence.intervals = 0.95,
+                        population.prevalence = 0.04)
+
+complex<-decision_curve(Typesura1 ~ pGender+Smoking+pAge,data = ju1,family = binomial(link ='logit'),
+                        thresholds = seq(0,1, by = 0.01),
+                        confidence.intervals= 0.95,
+                        study.design = 'case-control',
+                        population.prevalence= 0.04)
+
+complex1<-decision_curve(Typesura1 ~ LAS+pGender+Smoking+pAge,data = ju1,family = binomial(link ='logit'),
+                         thresholds = seq(0,1, by = 0.01),
+                         confidence.intervals= 0.95,
+                         study.design = 'case-control',
+                         population.prevalence= 0.04)
+
+
+
+List<- list(simple,complex,complex1)
+
+
+pdf("LUAD IA classcal pre 2 1years.pdf",width=4.5, height=4)
+dec2<-plot_decision_curve(List,
+                          curve.names=c('IAscore','classica',"IAscore+classica"),
+                          cost.benefit.axis =FALSE,col= c("#F08080","#EED5D2","#BFEFFF"),
+                          confidence.intervals=FALSE,
+                          standardize = FALSE,
+                          legend.position="none",
+                          xlim=c(0,0.2))
+
+dec2
+dev.off()
+
+
+pdf("LUAD IA score pre 1years.pdf",width=4.5, height=4)
+par(font.axis=2,font.lab=2,
+    font.main=2,cex.lab=1.2,cex.main=1.2,cex.axis=1,family="")
+plot_clinical_impact(simple,population.size= 1000,
+                     cost.benefit.axis = T,
+                     n.cost.benefits= 8,
+                     col =c("#F08080","#696969"),
+                     confidence.intervals= T,
+                     ylim=c(0,1000),
+                     legend.position="topright")
+
+dev.off()
+
+
+###
+
+###选择(1)LAS+pTP53+pKRAS+pEGFR
+library(leaps)
+par(font.axis=2,font.lab=2,font.main=2,cex.lab=1.2,cex.main=1.2,cex.axis=1,family="")
+pdf("LUAD IA score mul logistic filatra mole r2 1years.pdf",width=4, height=4)
+
+faq1<-regsubsets(Typesura1 ~ LAS+pTP53+pKRAS+pEGFR,data=no1,nbest=2)
+
+plot(faq1,scale="adjr2")
+dev.off()
+
+fa1ap<-glm(Typesura1 ~ LAS+pTP53+pKRAS+pEGFR,data=no1,family=binomial(link='logit'))
+
+AIC(fa,fa1ap)
+
+
+fp<-lrm(Typesura1 ~  LAS+pTP53+pKRAS+pEGFR,data=no1)
+
+###交叉验证
+
+library(bootstrap)
+shrinkage <- function(fit, k=10){  
+  require(bootstrap)
+  theta.fit <- function(x,y){lsfit(x,y)}  
+  theta.predict <- function(fit,x){cbind(1,x)%*%fit$coef}
+  x <- fit$model[,2:ncol(fit$model)]  
+  y <- fit$model[,1]
+  results <- crossval(x, y, theta.fit, theta.predict, ngroup=k)  
+  r2 <- cor(y, fit$fitted.values)^2  
+  r2cv <- cor(y, results$cv.fit)^2  
+  cat("Original R-square =", r2, "n") 
+  cat(k, "Fold Cross-Validated R-square =", r2cv, "n")  
+  cat("Change =", r2-r2cv, "n")
+}
+shrinkage(fa1ap)
+
+
+
+##相对重要性
+
+library(relaimpo)
+
+relweights <- function(fit,...){
+  R <- cor(fit$model)   
+  nvar <- ncol(R)    
+  rxx <- R[2:nvar, 2:nvar] 
+  rxy <- R[2:nvar, 1]    
+  svd <- eigen(rxx)    
+  evec <- svd$vectors   
+  ev <- svd$values    
+  delta <- diag(sqrt(ev))    
+  lambda <- evec %*% delta %*% t(evec) 
+  lambdasq <- lambda ^ 2   
+  beta <- solve(lambda) %*% rxy  
+  rsquare <- colSums(beta ^ 2)  
+  rawwgt <- lambdasq %*% beta ^ 2
+  import <- (rawwgt / rsquare) * 100
+  lbls <- names(fit$model[2:nvar])  
+  rownames(import)<- lbls
+  colnames(import) <- "Weights"
+  barplot(t(import),names.arg=lbls,
+          ylab="% of R-Square",
+          xlab="Relative Importance of Predictor Variables",     
+          main="Relative Importance of Predictor Variables",  
+          sub=paste("Total R-Square=", round(rsquare, digits=3)),   
+          ...)
+  return(import)
+}
+
+pdf("LUAD IA score mul logistic relative mole r2 1years.pdf",width=4.3, height=4)
+relweights(fa1ap,col="lightgray")
+dev.off()
+
+##决策曲线
+
+library(rmda)
+ju1<-no1
+###study.design = 'case-control'   population.prevalence = 0.04(IA 1年死亡率)
+simple<- decision_curve(Typesura1~LAS,data= ju1,
+                        family = binomial(link ='logit'),
+                        thresholds= seq(0,1, by = 0.01),
+                        study.design = 'case-control',
+                        confidence.intervals = 0.95,
+                        population.prevalence = 0.04)
+
+complex<-decision_curve(Typesura1 ~ pTP53+pKRAS+pEGFR,data = ju1,family = binomial(link ='logit'),
+                        thresholds = seq(0,1, by = 0.01),
+                        confidence.intervals= 0.95,
+                        study.design = 'case-control',
+                        population.prevalence= 0.04)
+
+complex1<-decision_curve(Typesura1 ~ LAS+pTP53+pKRAS+pEGFR,data = ju1,family = binomial(link ='logit'),
+                         thresholds = seq(0,1, by = 0.01),
+                         confidence.intervals= 0.95,
+                         study.design = 'case-control',
+                         population.prevalence= 0.04)
+
+
+
+List<- list(simple,complex,complex1)
+
+
+pdf("LUAD IA classcal pre mole2 1years.pdf",width=4.5, height=4)
+dec2<-plot_decision_curve(List,
+                          curve.names=c('IAscore','mole',"IAscore+mole"),
+                          cost.benefit.axis =FALSE,col= c("#F08080","#EED5D2","#BFEFFF"),
+                          confidence.intervals=FALSE,
+                          standardize = FALSE,xlim=c(0,0.2),
+                          legend.position="none")
+
+dec2
+dev.off()
+
+pdf("LUAD IA score pre mole 1years.pdf",width=4.5, height=4)
+par(font.axis=2,font.lab=2,
+    font.main=2,cex.lab=1.2,cex.main=1.2,cex.axis=1,family="")
+plot_clinical_impact(simple,population.size= 1000,
+                     cost.benefit.axis = T,
+                     n.cost.benefits= 8,
+                     col =c("#F08080","#696969"),
+                     confidence.intervals= T,
+                     ylim=c(0,1000),
+                     legend.position="topright")
+
+dev.off()
+
+
+###1 3 5 ROC统一作图
+pdf("LUAD IA score 5 3 1 year z.pdf",width=5, height=5)
+plot(zhe2,col="#F08080",font=2,
+     main="",cex.main=2,
+     font.lab=2,font.axis=2,cex.lab=1.8,cex.axis=1.4)
+plot(zhe23,col="#EED5D2",add=T)
+plot(zhe21,col="#BFEFFF",add=T)
+
+dev.off()
+
+
+
+###butong danjiyiing biaohua
+
+##(1)
+##采用(y-median(y))/mad(y)标准单个样本的基因列表 y为单个样本的全部基因数
+
+LUAD1<-list.files(pattern="\\RNA matrix.csv")
+LUAD2<-as.data.frame(LUAD1)
+LUAD3<-tidyr::separate(LUAD2,LUAD1,into=c("Dataset")," ")
+for(i in seq_along(LUAD3$Dataset))
+  assign(LUAD3$Dataset[i], read.table(LUAD1[i], sep = ",", header = TRUE))
+
+LUAD4<-list(GSE13213,GSE26939,GSE30219,GSE31210,GSE41271,GSE42127,
+            GSE50081,GSE63459,GSE68465,GSE68571,GSE72094,TCGALUAD)
+for(i in seq_along(LUAD4)){rownames(LUAD4[[i]])<-(LUAD4[[i]])[,1]}
+
+
+##每一个数据集进行基于中位数和绝对中位差的转化（一个样本的所有基因）
+LUAD5<-lapply(LUAD4,function(x)as.data.frame(apply(x[,-1],2,function(y)(y-median(y))/mad(y))))
+
+for(i in seq_along(LUAD5)){ LUAD5[[i]]$GeneID <- rownames(LUAD5[[i]])}
+for(i in seq_along(LUAD5)){ LUAD5[[i]] <- (LUAD5[[i]])[,c("GeneID",colnames(LUAD5[[i]])[1:(length(colnames(LUAD5[[i]]))-1)])]}
+
+LUAD6<-Reduce(function(x,y)merge(x,y,by="GeneID",all.x=FALSE),LUAD5,accumulate=FALSE)
+
+write.table(LUAD6,"NSCLC matrix gene z.csv",sep=",",col.names=T,row.names = F)
+
+LUAD6<-read.table("NSCLC matrix gene z.csv",
+                  sep=",",header=TRUE,stringsAsFactors=FALSE)
+
+
+NS1<-read.table("NSCLC clinical.csv",sep=",",header=TRUE,stringsAsFactors=FALSE)
+NS2<-subset(NS1,NS1$Patients %in% colnames(LUAD6)[-1],select=c(1:16))
+NS3<-setdiff(colnames(LUAD6),NS2$Patients)[-1]
+
+LUAD7<-dplyr::select(LUAD6,-one_of(NS3))
+
+LAS<-read.table("kall LUAD lasso.csv",sep=",",header=TRUE,stringsAsFactors=FALSE)
+
+fan1<-subset(LUAD7,LUAD7$GeneID %in% LAS$GeneID,select=c(1:ncol(LUAD7)))
+LAS1<-subset(LAS,LAS$GeneID %in% fan1$GeneID,select=c(1:2))
+
+rownames(fan1)<-fan1$GeneID
+fan2<-fan1[,-1]
+
+fan3<-as.data.frame(sapply(fan2,function(x)sum(x*LAS1$coef)))
+fan3$Patients<-rownames(fan3)
+colnames(fan3)<-c("LAS","Patients")
+
+lR1<-merge(NS1,fan3,by=c("Patients"))
+write.table(lR1,"NSCLC LASSO singlegene r2.csv",sep=",",col.names=T,row.names = F)
+
+lR1<-read.table("NSCLC LASSO singlegene r2.csv",
+                sep=",",header=TRUE,stringsAsFactors=FALSE)
+g1<-subset(lR1,Histology=="AD",select=c(1:17)) ##2484
+
+table(g1$pStage)
+g1$pstage1[g1$pStage=="IA"]<-"IA"
+g1$pstage1[g1$pStage=="IB"|
+             g1$pStage=="II"|
+             g1$pStage=="IIA"|
+             g1$pStage=="IIB"]<-"IB-II"
+g1$pstage1[g1$pStage=="III"|
+             g1$pStage=="IIIA"|
+             g1$pStage=="IIIB"]<-"III"
+g1$pstage1[g1$pStage=="IV"]<-"IV"
+
+table(g1$pstage1)##IA IB-II   III    IV 845  1177   345    51
+
+g1$OS.time<-as.numeric(g1$OS.time)
+g1$OS.status<-as.numeric(g1$OS.status)
+g1$PFS.time<-as.numeric(g1$PFS.time)
+g1$PFS.status<-as.numeric(g1$PFS.status)
+
+options(digits=3)
+##5 year
+LUAD5<-subset(g1,g1$pstage1=="IA",select=c(1:18))
+LUAD5$Typesur[LUAD5$OS.time > 60]<-"Low risk"
+LUAD5$Typesur[LUAD5$OS.time < 60 & LUAD5$OS.status=="1"]<-"High risk"
+LUAD5$Typesur[LUAD5$OS.time < 60 & LUAD5$OS.status=="0"]<-"Unknow"
+table(LUAD5$Typesur)
+table(LUAD5$Dataset,LUAD5$Typesur)
+
+
+zhe1<-subset(LUAD5,LUAD5$Typesur!="Unknow",select=c(1:19))
+
+zhe2<-roc(zhe1$Typesur,zhe1$LAS)
+auc(zhe2)###  Area under the curve: 0.738
+ci(zhe2)#95% CI: 0.689-0.787 (DeLong)
+pdf("LUAD IA score 5 year singlegene r2.pdf",width=5, height=5)
+plot(zhe2,print.auc=FALSE, auc.polygon=TRUE, max.auc.polygon=TRUE,
+     auc.polygon.col="#EED5D2", print.thres=TRUE,font=2,
+     main="",cex.main=2,
+     font.lab=2,font.axis=2,cex.lab=1.8,cex.axis=1.4)
+text(0.45,0.1,"AUC:0.738 \n 95% CI: 0.689-0.787",
+     cex=1.6,font=2)
+dev.off()
+
+
+##3 year
+LUAD5<-subset(g1,g1$pstage1=="IA",select=c(1:18))
+LUAD5$Typesur[LUAD5$OS.time > 36]<-"Low risk"
+LUAD5$Typesur[LUAD5$OS.time < 36 & LUAD5$OS.status=="1"]<-"High risk"
+LUAD5$Typesur[LUAD5$OS.time < 36 & LUAD5$OS.status=="0"]<-"Unknow"
+table(LUAD5$Typesur)
+table(LUAD5$Dataset,LUAD5$Typesur)
+
+
+zhe1<-subset(LUAD5,LUAD5$Typesur!="Unknow",select=c(1:19))
+
+zhe2<-roc(zhe1$Typesur,zhe1$LAS)
+auc(zhe2)###  Area under the curve: 0.705
+ci(zhe2)#95% CI: 0.653-0.756 (DeLong)
+pdf("LUAD IA score 3 year singlegene r2.pdf",width=5, height=5)
+plot(zhe2,print.auc=FALSE, auc.polygon=TRUE, max.auc.polygon=TRUE,
+     auc.polygon.col="#EED5D2", print.thres=TRUE,font=2,
+     main="",cex.main=2,
+     font.lab=2,font.axis=2,cex.lab=1.8,cex.axis=1.4)
+text(0.45,0.1,"AUC:0.705 \n 95% CI: 0.653-0.756",
+     cex=1.6,font=2)
+dev.off()
+
+
+##1 year
+LUAD5<-subset(g1,g1$pstage1=="IA",select=c(1:18))
+LUAD5$Typesur[LUAD5$OS.time > 12]<-"Low risk"
+LUAD5$Typesur[LUAD5$OS.time < 12 & LUAD5$OS.status=="1"]<-"High risk"
+LUAD5$Typesur[LUAD5$OS.time < 12 & LUAD5$OS.status=="0"]<-"Unknow"
+table(LUAD5$Typesur)
+table(LUAD5$Dataset,LUAD5$Typesur)
+
+
+zhe1<-subset(LUAD5,LUAD5$Typesur!="Unknow",select=c(1:19))
+
+zhe2<-roc(zhe1$Typesur,zhe1$LAS)
+auc(zhe2)###  Area under the curve: 0.638
+ci(zhe2)#95% CI: 0.549-0.728 (DeLong)
+pdf("LUAD IA score 1 year singlegene r2.pdf",width=5, height=5)
+plot(zhe2,print.auc=FALSE, auc.polygon=TRUE, max.auc.polygon=TRUE,
+     auc.polygon.col="#EED5D2", print.thres=TRUE,font=2,
+     main="",cex.main=2,
+     font.lab=2,font.axis=2,cex.lab=1.8,cex.axis=1.4)
+text(0.45,0.1,"AUC:0.638 \n 95% CI: 0.549-0.728",
+     cex=1.6,font=2)
+dev.off()
+
+
+
+
+
+##(2)
+##采用(y)/quantile(y,0.75)标准单个样本的基因列表 y为单个样本的全部基因数
+
+LUAD1<-list.files(pattern="\\RNA matrix.csv")
+LUAD2<-as.data.frame(LUAD1)
+LUAD3<-tidyr::separate(LUAD2,LUAD1,into=c("Dataset")," ")
+for(i in seq_along(LUAD3$Dataset))
+  assign(LUAD3$Dataset[i], read.table(LUAD1[i], sep = ",", header = TRUE))
+
+LUAD4<-list(GSE13213,GSE26939,GSE30219,GSE31210,GSE41271,GSE42127,
+            GSE50081,GSE63459,GSE68465,GSE68571,GSE72094,TCGALUAD)
+for(i in seq_along(LUAD4)){rownames(LUAD4[[i]])<-(LUAD4[[i]])[,1]}
+
+
+
+##
+LUAD5<-lapply(LUAD4,function(x)as.data.frame(apply(x[,-1],2,function(y)(y/quantile(y,0.75)))))
+
+for(i in seq_along(LUAD5)){ LUAD5[[i]]$GeneID <- rownames(LUAD5[[i]])}
+for(i in seq_along(LUAD5)){ LUAD5[[i]] <- (LUAD5[[i]])[,c("GeneID",colnames(LUAD5[[i]])[1:(length(colnames(LUAD5[[i]]))-1)])]}
+
+LUAD6<-Reduce(function(x,y)merge(x,y,by="GeneID",all.x=FALSE),LUAD5,accumulate=FALSE)
+
+write.table(LUAD6,"NSCLC matrix gene z uq.csv",sep=",",col.names=T,row.names = F)
+
+LUAD6<-read.table("NSCLC matrix gene z uq.csv",
+                  sep=",",header=TRUE,stringsAsFactors=FALSE)
+
+
+NS1<-read.table("NSCLC clinical.csv",sep=",",header=TRUE,stringsAsFactors=FALSE)
+NS2<-subset(NS1,NS1$Patients %in% colnames(LUAD6)[-1],select=c(1:16))
+NS3<-setdiff(colnames(LUAD6),NS2$Patients)[-1]
+
+LUAD7<-dplyr::select(LUAD6,-one_of(NS3))
+
+LAS<-read.table("kall LUAD lasso.csv",sep=",",header=TRUE,stringsAsFactors=FALSE)
+
+fan1<-subset(LUAD7,LUAD7$GeneID %in% LAS$GeneID,select=c(1:ncol(LUAD7)))
+LAS1<-subset(LAS,LAS$GeneID %in% fan1$GeneID,select=c(1:2))
+
+rownames(fan1)<-fan1$GeneID
+fan2<-fan1[,-1]
+
+fan3<-as.data.frame(sapply(fan2,function(x)sum(x*LAS1$coef)))
+fan3$Patients<-rownames(fan3)
+colnames(fan3)<-c("LAS","Patients")
+
+lR1<-merge(NS1,fan3,by=c("Patients"))
+write.table(lR1,"NSCLC LASSO singlegene r2 uq.csv",sep=",",col.names=T,row.names = F)
+
+lR1<-read.table("NSCLC LASSO singlegene r2 uq.csv",
+                sep=",",header=TRUE,stringsAsFactors=FALSE)
+g1<-subset(lR1,Histology=="AD",select=c(1:17)) ##2484
+
+table(g1$pStage)
+g1$pstage1[g1$pStage=="IA"]<-"IA"
+g1$pstage1[g1$pStage=="IB"|
+             g1$pStage=="II"|
+             g1$pStage=="IIA"|
+             g1$pStage=="IIB"]<-"IB-II"
+g1$pstage1[g1$pStage=="III"|
+             g1$pStage=="IIIA"|
+             g1$pStage=="IIIB"]<-"III"
+g1$pstage1[g1$pStage=="IV"]<-"IV"
+
+table(g1$pstage1)##IA IB-II   III    IV 845  1177   345    51
+
+g1$OS.time<-as.numeric(g1$OS.time)
+g1$OS.status<-as.numeric(g1$OS.status)
+g1$PFS.time<-as.numeric(g1$PFS.time)
+g1$PFS.status<-as.numeric(g1$PFS.status)
+
+options(digits=3)
+##5 year
+LUAD5<-subset(g1,g1$pstage1=="IA",select=c(1:18))
+LUAD5$Typesur[LUAD5$OS.time > 60]<-"Low risk"
+LUAD5$Typesur[LUAD5$OS.time < 60 & LUAD5$OS.status=="1"]<-"High risk"
+LUAD5$Typesur[LUAD5$OS.time < 60 & LUAD5$OS.status=="0"]<-"Unknow"
+table(LUAD5$Typesur)
+table(LUAD5$Dataset,LUAD5$Typesur)
+
+
+zhe1<-subset(LUAD5,LUAD5$Typesur!="Unknow",select=c(1:19))
+options(digits=22)
+zhe2<-roc(zhe1$Typesur,zhe1$LAS)
+auc(zhe2)###  Area under the curve: 0.784
+ci(zhe2)#95% CI: 0.738-0.830 (DeLong)
+pdf("LUAD IA score 5 year singlegene r2 uq.pdf",width=5, height=5)
+plot(zhe2,print.auc=FALSE, auc.polygon=TRUE, max.auc.polygon=TRUE,
+     auc.polygon.col="#EED5D2", print.thres=TRUE,font=2,
+     main="",cex.main=2,
+     font.lab=2,font.axis=2,cex.lab=1.8,cex.axis=1.4)
+text(0.45,0.1,"AUC:0.784 \n 95% CI: 0.738-0.830",
+     cex=1.6,font=2)
+dev.off()
+
+##3 year
+LUAD5<-subset(g1,g1$pstage1=="IA",select=c(1:18))
+LUAD5$Typesur[LUAD5$OS.time > 36]<-"Low risk"
+LUAD5$Typesur[LUAD5$OS.time < 36 & LUAD5$OS.status=="1"]<-"High risk"
+LUAD5$Typesur[LUAD5$OS.time < 36 & LUAD5$OS.status=="0"]<-"Unknow"
+table(LUAD5$Typesur)
+table(LUAD5$Dataset,LUAD5$Typesur)
+
+
+zhe1<-subset(LUAD5,LUAD5$Typesur!="Unknow",select=c(1:19))
+options(digits=22)
+zhe2<-roc(zhe1$Typesur,zhe1$LAS)
+auc(zhe2)###  Area under the curve: 0.761
+ci(zhe2)#95% CI: 0.713-0.808 (DeLong)
+pdf("LUAD IA score 3 year singlegene r2 uq.pdf",width=5, height=5)
+plot(zhe2,print.auc=FALSE, auc.polygon=TRUE, max.auc.polygon=TRUE,
+     auc.polygon.col="#EED5D2", print.thres=TRUE,font=2,
+     main="",cex.main=2,
+     font.lab=2,font.axis=2,cex.lab=1.8,cex.axis=1.4)
+text(0.45,0.1,"AUC:0.761 \n 95% CI: 0.713-0.808",
+     cex=1.6,font=2)
+dev.off()
+
+
+##1 year
+LUAD5<-subset(g1,g1$pstage1=="IA",select=c(1:18))
+LUAD5$Typesur[LUAD5$OS.time > 12]<-"Low risk"
+LUAD5$Typesur[LUAD5$OS.time < 12 & LUAD5$OS.status=="1"]<-"High risk"
+LUAD5$Typesur[LUAD5$OS.time < 12 & LUAD5$OS.status=="0"]<-"Unknow"
+table(LUAD5$Typesur)
+table(LUAD5$Dataset,LUAD5$Typesur)
+
+
+zhe1<-subset(LUAD5,LUAD5$Typesur!="Unknow",select=c(1:19))
+options(digits=22)
+zhe2<-roc(zhe1$Typesur,zhe1$LAS)
+auc(zhe2)###  Area under the curve: 0.692
+ci(zhe2)#95% CI: 0.609-0.776 (DeLong)
+pdf("LUAD IA score 1 year singlegene r2 uq.pdf",width=5, height=5)
+plot(zhe2,print.auc=FALSE, auc.polygon=TRUE, max.auc.polygon=TRUE,
+     auc.polygon.col="#EED5D2", print.thres=TRUE,font=2,
+     main="",cex.main=2,
+     font.lab=2,font.axis=2,cex.lab=1.8,cex.axis=1.4)
+text(0.45,0.1,"AUC:0.692 \n 95% CI: 0.609-0.776",
+     cex=1.6,font=2)
+dev.off()
+
+
+
+
+##(3)((x-min(x))/(max(x)-min(x)))
+##采((x-min(x))/(max(x)-min(x)))标准单个样本的基因列表 y为单个样本的全部基因数
+
+LUAD1<-list.files(pattern="\\RNA matrix.csv")
+LUAD2<-as.data.frame(LUAD1)
+LUAD3<-tidyr::separate(LUAD2,LUAD1,into=c("Dataset")," ")
+for(i in seq_along(LUAD3$Dataset))
+  assign(LUAD3$Dataset[i], read.table(LUAD1[i], sep = ",", header = TRUE))
+
+LUAD4<-list(GSE13213,GSE26939,GSE30219,GSE31210,GSE41271,GSE42127,
+            GSE50081,GSE63459,GSE68465,GSE68571,GSE72094,TCGALUAD)
+for(i in seq_along(LUAD4)){rownames(LUAD4[[i]])<-(LUAD4[[i]])[,1]}
+
+
+
+##
+LUAD5<-lapply(LUAD4,function(x)as.data.frame(apply(x[,-1],2,function(y)((y-min(y))/(max(y)-min(y))))))
+
+for(i in seq_along(LUAD5)){ LUAD5[[i]]$GeneID <- rownames(LUAD5[[i]])}
+for(i in seq_along(LUAD5)){ LUAD5[[i]] <- (LUAD5[[i]])[,c("GeneID",colnames(LUAD5[[i]])[1:(length(colnames(LUAD5[[i]]))-1)])]}
+
+LUAD6<-Reduce(function(x,y)merge(x,y,by="GeneID",all.x=FALSE),LUAD5,accumulate=FALSE)
+
+write.table(LUAD6,"NSCLC matrix gene z axin.csv",sep=",",col.names=T,row.names = F)
+
+LUAD6<-read.table("NSCLC matrix gene z axin.csv",
+                  sep=",",header=TRUE,stringsAsFactors=FALSE)
+
+
+NS1<-read.table("NSCLC clinical.csv",sep=",",header=TRUE,stringsAsFactors=FALSE)
+NS2<-subset(NS1,NS1$Patients %in% colnames(LUAD6)[-1],select=c(1:16))
+NS3<-setdiff(colnames(LUAD6),NS2$Patients)[-1]
+
+LUAD7<-dplyr::select(LUAD6,-one_of(NS3))
+
+LAS<-read.table("kall LUAD lasso.csv",sep=",",header=TRUE,stringsAsFactors=FALSE)
+
+fan1<-subset(LUAD7,LUAD7$GeneID %in% LAS$GeneID,select=c(1:ncol(LUAD7)))
+LAS1<-subset(LAS,LAS$GeneID %in% fan1$GeneID,select=c(1:2))
+
+rownames(fan1)<-fan1$GeneID
+fan2<-fan1[,-1]
+
+fan3<-as.data.frame(sapply(fan2,function(x)sum(x*LAS1$coef)))
+fan3$Patients<-rownames(fan3)
+colnames(fan3)<-c("LAS","Patients")
+
+lR1<-merge(NS1,fan3,by=c("Patients"))
+write.table(lR1,"NSCLC LASSO singlegene r2 axin.csv",sep=",",col.names=T,row.names = F)
+
+lR1<-read.table("NSCLC LASSO singlegene r2 axin.csv",
+                sep=",",header=TRUE,stringsAsFactors=FALSE)
+g1<-subset(lR1,Histology=="AD",select=c(1:17)) ##2484
+
+table(g1$pStage)
+g1$pstage1[g1$pStage=="IA"]<-"IA"
+g1$pstage1[g1$pStage=="IB"|
+             g1$pStage=="II"|
+             g1$pStage=="IIA"|
+             g1$pStage=="IIB"]<-"IB-II"
+g1$pstage1[g1$pStage=="III"|
+             g1$pStage=="IIIA"|
+             g1$pStage=="IIIB"]<-"III"
+g1$pstage1[g1$pStage=="IV"]<-"IV"
+
+table(g1$pstage1)##IA IB-II   III    IV 845  1177   345    51
+
+g1$OS.time<-as.numeric(g1$OS.time)
+g1$OS.status<-as.numeric(g1$OS.status)
+g1$PFS.time<-as.numeric(g1$PFS.time)
+g1$PFS.status<-as.numeric(g1$PFS.status)
+
+options(digits=3)
+##5 year
+LUAD5<-subset(g1,g1$pstage1=="IA",select=c(1:18))
+LUAD5$Typesur[LUAD5$OS.time > 60]<-"Low risk"
+LUAD5$Typesur[LUAD5$OS.time < 60 & LUAD5$OS.status=="1"]<-"High risk"
+LUAD5$Typesur[LUAD5$OS.time < 60 & LUAD5$OS.status=="0"]<-"Unknow"
+table(LUAD5$Typesur)
+table(LUAD5$Dataset,LUAD5$Typesur)
+
+
+zhe1<-subset(LUAD5,LUAD5$Typesur!="Unknow",select=c(1:19))
+options(digits=22)
+zhe2<-roc(zhe1$Typesur,zhe1$LAS)
+auc(zhe2)###  Area under the curve: 0.572
+ci(zhe2)#95% CI: 0.515-0.629 (DeLong)
+pdf("LUAD IA score 5 year singlegene r2 axin.pdf",width=5, height=5)
+plot(zhe2,print.auc=FALSE, auc.polygon=TRUE, max.auc.polygon=TRUE,
+     auc.polygon.col="#EED5D2", print.thres=TRUE,font=2,
+     main="",cex.main=2,
+     font.lab=2,font.axis=2,cex.lab=1.8,cex.axis=1.4)
+text(0.45,0.1,"AUC:0.572 \n 95% CI: 0.515-0.629",
+     cex=1.6,font=2)
+dev.off()
+
+
+
+##(4)##(2)
+##采用(y)/median(y)标准单个样本的基因列表 y为单个样本的全部基因数
+
+LUAD1<-list.files(pattern="\\RNA matrix.csv")
+LUAD2<-as.data.frame(LUAD1)
+LUAD3<-tidyr::separate(LUAD2,LUAD1,into=c("Dataset")," ")
+for(i in seq_along(LUAD3$Dataset))
+  assign(LUAD3$Dataset[i], read.table(LUAD1[i], sep = ",", header = TRUE))
+
+LUAD4<-list(GSE13213,GSE26939,GSE30219,GSE31210,GSE41271,GSE42127,
+            GSE50081,GSE63459,GSE68465,GSE68571,GSE72094,TCGALUAD)
+for(i in seq_along(LUAD4)){rownames(LUAD4[[i]])<-(LUAD4[[i]])[,1]}
+
+
+
+##
+LUAD5<-lapply(LUAD4,function(x)as.data.frame(apply(x[,-1],2,function(y)(y/median(y)))))
+
+for(i in seq_along(LUAD5)){ LUAD5[[i]]$GeneID <- rownames(LUAD5[[i]])}
+for(i in seq_along(LUAD5)){ LUAD5[[i]] <- (LUAD5[[i]])[,c("GeneID",colnames(LUAD5[[i]])[1:(length(colnames(LUAD5[[i]]))-1)])]}
+
+LUAD6<-Reduce(function(x,y)merge(x,y,by="GeneID",all.x=FALSE),LUAD5,accumulate=FALSE)
+
+write.table(LUAD6,"NSCLC matrix gene z med.csv",sep=",",col.names=T,row.names = F)
+
+LUAD6<-read.table("NSCLC matrix gene z med.csv",
+                  sep=",",header=TRUE,stringsAsFactors=FALSE)
+
+
+NS1<-read.table("NSCLC clinical.csv",sep=",",header=TRUE,stringsAsFactors=FALSE)
+NS2<-subset(NS1,NS1$Patients %in% colnames(LUAD6)[-1],select=c(1:16))
+NS3<-setdiff(colnames(LUAD6),NS2$Patients)[-1]
+
+LUAD7<-dplyr::select(LUAD6,-one_of(NS3))
+
+LAS<-read.table("kall LUAD lasso.csv",sep=",",header=TRUE,stringsAsFactors=FALSE)
+
+fan1<-subset(LUAD7,LUAD7$GeneID %in% LAS$GeneID,select=c(1:ncol(LUAD7)))
+LAS1<-subset(LAS,LAS$GeneID %in% fan1$GeneID,select=c(1:2))
+
+rownames(fan1)<-fan1$GeneID
+fan2<-fan1[,-1]
+
+fan3<-as.data.frame(sapply(fan2,function(x)sum(x*LAS1$coef)))
+fan3$Patients<-rownames(fan3)
+colnames(fan3)<-c("LAS","Patients")
+
+lR1<-merge(NS1,fan3,by=c("Patients"))
+write.table(lR1,"NSCLC LASSO singlegene med.csv",sep=",",col.names=T,row.names = F)
+
+lR1<-read.table("NSCLC LASSO singlegene med.csv",
+                sep=",",header=TRUE,stringsAsFactors=FALSE)
+g1<-subset(lR1,Histology=="AD",select=c(1:17)) ##2484
+
+table(g1$pStage)
+g1$pstage1[g1$pStage=="IA"]<-"IA"
+g1$pstage1[g1$pStage=="IB"|
+             g1$pStage=="II"|
+             g1$pStage=="IIA"|
+             g1$pStage=="IIB"]<-"IB-II"
+g1$pstage1[g1$pStage=="III"|
+             g1$pStage=="IIIA"|
+             g1$pStage=="IIIB"]<-"III"
+g1$pstage1[g1$pStage=="IV"]<-"IV"
+
+table(g1$pstage1)##IA IB-II   III    IV 845  1177   345    51
+
+g1$OS.time<-as.numeric(g1$OS.time)
+g1$OS.status<-as.numeric(g1$OS.status)
+g1$PFS.time<-as.numeric(g1$PFS.time)
+g1$PFS.status<-as.numeric(g1$PFS.status)
+
+options(digits=3)
+##5 year
+LUAD5<-subset(g1,g1$pstage1=="IA",select=c(1:18))
+LUAD5$Typesur[LUAD5$OS.time > 60]<-"Low risk"
+LUAD5$Typesur[LUAD5$OS.time < 60 & LUAD5$OS.status=="1"]<-"High risk"
+LUAD5$Typesur[LUAD5$OS.time < 60 & LUAD5$OS.status=="0"]<-"Unknow"
+table(LUAD5$Typesur)
+table(LUAD5$Dataset,LUAD5$Typesur)
+
+
+zhe1<-subset(LUAD5,LUAD5$Typesur!="Unknow",select=c(1:19))
+options(digits=22)
+zhe2<-roc(zhe1$Typesur,zhe1$LAS)
+auc(zhe2)###  Area under the curve: 0.659
+ci(zhe2)#95% CI: 0.606-0.712 (DeLong)
+pdf("LUAD IA score 5 year singlegene med.pdf",width=5, height=5)
+plot(zhe2,print.auc=FALSE, auc.polygon=TRUE, max.auc.polygon=TRUE,
+     auc.polygon.col="#EED5D2", print.thres=TRUE,font=2,
+     main="",cex.main=2,
+     font.lab=2,font.axis=2,cex.lab=1.8,cex.axis=1.4)
+text(0.45,0.1,"AUC:0.659 \n 95% CI: 0.606-0.712",
+     cex=1.6,font=2)
+dev.off()
+
+
+###将单基因标化值进行Z转化
+##(1)采用(y-median(y))/mad(y)
+LUAD6<-read.table("NSCLC matrix gene z.csv",
+                  sep=",",header=TRUE,stringsAsFactors=FALSE)
+
+
+NS1<-read.table("NSCLC clinical.csv",sep=",",header=TRUE,stringsAsFactors=FALSE)
+NS2<-subset(NS1,NS1$Patients %in% colnames(LUAD6)[-1],select=c(1:16))
+NS3<-setdiff(colnames(LUAD6),NS2$Patients)[-1]
+
+LUAD7<-dplyr::select(LUAD6,-one_of(NS3))
+
+rownames(LUAD7)<-LUAD7$GeneID
+
+IAAD<-subset(NS2,NS2$pStage=="IA" & NS2$Histology=="AD",select=c(1:16))
+
+
+
+
+
+IAAD1<-dplyr::select(LUAD7[,-1],one_of(IAAD$Patients))
+
+IAAD2<-as.data.frame(t(scale(t(IAAD1))))
+
+
+quantile(IAAD2[1,])
+mean(as.numeric(IAAD2[1,]))
+sd(as.numeric(IAAD2[1,]))
+summary(as.numeric(IAAD2[1,]))
+var(as.numeric(IAAD2[1,]))
+
+LUAD7a<-IAAD2
+LUAD7a$GeneID<-rownames(LUAD7a)
+LUAD7a<-LUAD7a[,c(ncol(LUAD7a),(1:(ncol(LUAD7a)-1)))]
+write.table(LUAD7a,"LUAD IA singlegene r2 mm z.csv",sep=",",col.names=T,row.names = F)
+
+LAS<-read.table("kall LUAD lasso.csv",sep=",",header=TRUE,stringsAsFactors=FALSE)
+
+fan1<-subset(LUAD7a,LUAD7a$GeneID %in% LAS$GeneID,select=c(1:ncol(LUAD7a)))
+LAS1<-subset(LAS,LAS$GeneID %in% fan1$GeneID,select=c(1:2))
+
+identical(as.numeric(fan1$GeneID),as.numeric(LAS1$GeneID))
+
+rownames(fan1)<-fan1$GeneID
+fan2<-fan1[,-1]
+
+fan3<-as.data.frame(sapply(fan2,function(x)sum(x*LAS1$coef)))
+fan3$Patients<-rownames(fan3)
+colnames(fan3)<-c("LAS","Patients")
+
+lR1<-merge(NS1,fan3,by=c("Patients"))
+write.table(lR1,"NSCLC LASSO singlegene r2 mm z.csv",sep=",",col.names=T,row.names = F)
+
+
+
+lR1<-read.table("NSCLC LASSO singlegene r2 mm z.csv",
+                sep=",",header=TRUE,stringsAsFactors=FALSE)
+g1<-subset(lR1,Histology=="AD",select=c(1:17)) ##845
+
+table(g1$pStage)
+g1$pstage1[g1$pStage=="IA"]<-"IA"
+
+table(g1$pstage1)##IA  845 
+
+g1$OS.time<-as.numeric(g1$OS.time)
+g1$OS.status<-as.numeric(g1$OS.status)
+g1$PFS.time<-as.numeric(g1$PFS.time)
+g1$PFS.status<-as.numeric(g1$PFS.status)
+
+options(digits=3)
+##5 year
+LUAD5<-subset(g1,g1$pstage1=="IA",select=c(1:18))
+LUAD5$Typesur[LUAD5$OS.time > 60]<-"Low risk"
+LUAD5$Typesur[LUAD5$OS.time < 60 & LUAD5$OS.status=="1"]<-"High risk"
+LUAD5$Typesur[LUAD5$OS.time < 60 & LUAD5$OS.status=="0"]<-"Unknow"
+table(LUAD5$Typesur)
+table(LUAD5$Dataset,LUAD5$Typesur)
+
+
+zhe1<-subset(LUAD5,LUAD5$Typesur!="Unknow",select=c(1:19))
+options(digits=22)
+zhe2<-roc(zhe1$Typesur,zhe1$LAS)
+auc(zhe2)###  Area under the curve: 0.810
+ci(zhe2)#95% CI: 0.771-0.849 (DeLong)
+pdf("LUAD IA score 5 year singlegene r2 mm Z.pdf",width=5, height=5)
+plot(zhe2,print.auc=FALSE, auc.polygon=TRUE, max.auc.polygon=TRUE,
+     auc.polygon.col="#EED5D2", print.thres=TRUE,font=2,
+     main="",cex.main=2,
+     font.lab=2,font.axis=2,cex.lab=1.8,cex.axis=1.4)
+text(0.45,0.1,"AUC:0.810 \n 95% CI: 0.771-0.849",
+     cex=1.6,font=2)
+dev.off()
+
+
+##3 year
+LUAD5<-subset(g1,g1$pstage1=="IA",select=c(1:18))
+LUAD5$Typesur[LUAD5$OS.time > 36]<-"Low risk"
+LUAD5$Typesur[LUAD5$OS.time < 36 & LUAD5$OS.status=="1"]<-"High risk"
+LUAD5$Typesur[LUAD5$OS.time < 36 & LUAD5$OS.status=="0"]<-"Unknow"
+table(LUAD5$Typesur)
+table(LUAD5$Dataset,LUAD5$Typesur)
+
+
+zhe1<-subset(LUAD5,LUAD5$Typesur!="Unknow",select=c(1:19))
+options(digits=22)
+zhe2<-roc(zhe1$Typesur,zhe1$LAS)
+auc(zhe2)###  Area under the curve: 0.779
+ci(zhe2)#95% CI: 0.738-0.819 (DeLong)
+pdf("LUAD IA score 3 year singlegene r2 mm Z.pdf",width=5, height=5)
+plot(zhe2,print.auc=FALSE, auc.polygon=TRUE, max.auc.polygon=TRUE,
+     auc.polygon.col="#EED5D2", print.thres=TRUE,font=2,
+     main="",cex.main=2,
+     font.lab=2,font.axis=2,cex.lab=1.8,cex.axis=1.4)
+text(0.45,0.1,"AUC:0.779 \n 95% CI: 0.738-0.819",
+     cex=1.6,font=2)
+dev.off()
+
+
+##1 year
+LUAD5<-subset(g1,g1$pstage1=="IA",select=c(1:18))
+LUAD5$Typesur[LUAD5$OS.time > 12]<-"Low risk"
+LUAD5$Typesur[LUAD5$OS.time < 12 & LUAD5$OS.status=="1"]<-"High risk"
+LUAD5$Typesur[LUAD5$OS.time < 12 & LUAD5$OS.status=="0"]<-"Unknow"
+table(LUAD5$Typesur)
+table(LUAD5$Dataset,LUAD5$Typesur)
+
+
+zhe1<-subset(LUAD5,LUAD5$Typesur!="Unknow",select=c(1:19))
+options(digits=22)
+zhe2<-roc(zhe1$Typesur,zhe1$LAS)
+auc(zhe2)###  Area under the curve: 0.732
+ci(zhe2)#95% CI: 0.662-0.802 (DeLong)
+pdf("LUAD IA score 1 year singlegene r2 mm Z.pdf",width=5, height=5)
+plot(zhe2,print.auc=FALSE, auc.polygon=TRUE, max.auc.polygon=TRUE,
+     auc.polygon.col="#EED5D2", print.thres=TRUE,font=2,
+     main="",cex.main=2,
+     font.lab=2,font.axis=2,cex.lab=1.8,cex.axis=1.4)
+text(0.45,0.1,"AUC:0.732 \n 95% CI: 0.662-0.802",
+     cex=1.6,font=2)
+dev.off()
+
+
+
+
+##（2）UQ
+LUAD6<-read.table("NSCLC matrix gene z uq.csv",
+                  sep=",",header=TRUE,stringsAsFactors=FALSE)
+
+
+NS1<-read.table("NSCLC clinical.csv",sep=",",header=TRUE,stringsAsFactors=FALSE)
+NS2<-subset(NS1,NS1$Patients %in% colnames(LUAD6)[-1],select=c(1:16))
+NS3<-setdiff(colnames(LUAD6),NS2$Patients)[-1]
+
+LUAD7<-dplyr::select(LUAD6,-one_of(NS3))
+
+rownames(LUAD7)<-LUAD7$GeneID
+
+IAAD<-subset(NS2,NS2$pStage=="IA" & NS2$Histology=="AD",select=c(1:16))
+
+
+
+
+
+IAAD1<-dplyr::select(LUAD7[,-1],one_of(IAAD$Patients))
+
+IAAD2<-as.data.frame(t(scale(t(IAAD1))))
+
+
+quantile(IAAD2[1,])
+mean(as.numeric(IAAD2[1,]))
+sd(as.numeric(IAAD2[1,]))
+summary(as.numeric(IAAD2[1,]))
+var(as.numeric(IAAD2[1,]))
+
+LUAD7a<-IAAD2
+LUAD7a$GeneID<-rownames(LUAD7a)
+LUAD7a<-LUAD7a[,c(ncol(LUAD7a),(1:(ncol(LUAD7a)-1)))]
+write.table(LUAD7a,"LUAD IA singlegene r2 uq z.csv",sep=",",col.names=T,row.names = F)
+
+LAS<-read.table("kall LUAD lasso.csv",sep=",",header=TRUE,stringsAsFactors=FALSE)
+
+fan1<-subset(LUAD7a,LUAD7a$GeneID %in% LAS$GeneID,select=c(1:ncol(LUAD7a)))
+LAS1<-subset(LAS,LAS$GeneID %in% fan1$GeneID,select=c(1:2))
+
+identical(as.numeric(fan1$GeneID),as.numeric(LAS1$GeneID))
+
+rownames(fan1)<-fan1$GeneID
+fan2<-fan1[,-1]
+
+fan3<-as.data.frame(sapply(fan2,function(x)sum(x*LAS1$coef)))
+fan3$Patients<-rownames(fan3)
+colnames(fan3)<-c("LAS","Patients")
+
+lR1<-merge(NS1,fan3,by=c("Patients"))
+write.table(lR1,"NSCLC LASSO singlegene r2 uq z.csv",sep=",",col.names=T,row.names = F)
+
+
+
+lR1<-read.table("NSCLC LASSO singlegene r2 uq z.csv",
+                sep=",",header=TRUE,stringsAsFactors=FALSE)
+g1<-subset(lR1,Histology=="AD",select=c(1:17)) ##845
+
+table(g1$pStage)
+g1$pstage1[g1$pStage=="IA"]<-"IA"
+
+table(g1$pstage1)##IA  845 
+
+g1$OS.time<-as.numeric(g1$OS.time)
+g1$OS.status<-as.numeric(g1$OS.status)
+g1$PFS.time<-as.numeric(g1$PFS.time)
+g1$PFS.status<-as.numeric(g1$PFS.status)
+
+options(digits=3)
+##5 year
+LUAD5<-subset(g1,g1$pstage1=="IA",select=c(1:18))
+LUAD5$Typesur[LUAD5$OS.time > 60]<-"Low risk"
+LUAD5$Typesur[LUAD5$OS.time < 60 & LUAD5$OS.status=="1"]<-"High risk"
+LUAD5$Typesur[LUAD5$OS.time < 60 & LUAD5$OS.status=="0"]<-"Unknow"
+table(LUAD5$Typesur)
+table(LUAD5$Dataset,LUAD5$Typesur)
+
+
+zhe1<-subset(LUAD5,LUAD5$Typesur!="Unknow",select=c(1:19))
+options(digits=22)
+zhe2<-roc(zhe1$Typesur,zhe1$LAS)
+auc(zhe2)###  Area under the curve: 0.785
+ci(zhe2)#95% CI: 0.741-0.829 (DeLong)
+pdf("LUAD IA score 5 year singlegene r2 uq Z.pdf",width=5, height=5)
+plot(zhe2,print.auc=FALSE, auc.polygon=TRUE, max.auc.polygon=TRUE,
+     auc.polygon.col="#EED5D2", print.thres=TRUE,font=2,
+     main="",cex.main=2,
+     font.lab=2,font.axis=2,cex.lab=1.8,cex.axis=1.4)
+text(0.45,0.1,"AUC:0.785 \n 95% CI: 0.741-0.829",
+     cex=1.6,font=2)
+dev.off()
+
+##3 year
+LUAD5<-subset(g1,g1$pstage1=="IA",select=c(1:18))
+LUAD5$Typesur[LUAD5$OS.time > 36]<-"Low risk"
+LUAD5$Typesur[LUAD5$OS.time < 36 & LUAD5$OS.status=="1"]<-"High risk"
+LUAD5$Typesur[LUAD5$OS.time < 36 & LUAD5$OS.status=="0"]<-"Unknow"
+table(LUAD5$Typesur)
+table(LUAD5$Dataset,LUAD5$Typesur)
+
+
+zhe1<-subset(LUAD5,LUAD5$Typesur!="Unknow",select=c(1:19))
+options(digits=22)
+zhe2<-roc(zhe1$Typesur,zhe1$LAS)
+auc(zhe2)###  Area under the curve: 0.757
+ci(zhe2)#95% CI: 0.710-0.803 (DeLong)
+pdf("LUAD IA score 3 year singlegene r2 uq Z.pdf",width=5, height=5)
+plot(zhe2,print.auc=FALSE, auc.polygon=TRUE, max.auc.polygon=TRUE,
+     auc.polygon.col="#EED5D2", print.thres=TRUE,font=2,
+     main="",cex.main=2,
+     font.lab=2,font.axis=2,cex.lab=1.8,cex.axis=1.4)
+text(0.45,0.1,"AUC:0.757 \n 95% CI: 0.710-0.803",
+     cex=1.6,font=2)
+dev.off()
+
+##1 year
+LUAD5<-subset(g1,g1$pstage1=="IA",select=c(1:18))
+LUAD5$Typesur[LUAD5$OS.time > 12]<-"Low risk"
+LUAD5$Typesur[LUAD5$OS.time < 12 & LUAD5$OS.status=="1"]<-"High risk"
+LUAD5$Typesur[LUAD5$OS.time < 12 & LUAD5$OS.status=="0"]<-"Unknow"
+table(LUAD5$Typesur)
+table(LUAD5$Dataset,LUAD5$Typesur)
+
+
+zhe1<-subset(LUAD5,LUAD5$Typesur!="Unknow",select=c(1:19))
+options(digits=22)
+zhe2<-roc(zhe1$Typesur,zhe1$LAS)
+auc(zhe2)###  Area under the curve:  0.717
+ci(zhe2)#95% CI: 0.641-0.792 (DeLong)
+pdf("LUAD IA score 1 year singlegene r2 uq Z.pdf",width=5, height=5)
+plot(zhe2,print.auc=FALSE, auc.polygon=TRUE, max.auc.polygon=TRUE,
+     auc.polygon.col="#EED5D2", print.thres=TRUE,font=2,
+     main="",cex.main=2,
+     font.lab=2,font.axis=2,cex.lab=1.8,cex.axis=1.4)
+text(0.45,0.1,"AUC:0.717 \n 95% CI: 0.641-0.792",
+     cex=1.6,font=2)
+dev.off()
+
+
+##（3）((x-min(x))/(max(x)-min(x)))
+LUAD6<-read.table("NSCLC matrix gene z axin.csv",
+                  sep=",",header=TRUE,stringsAsFactors=FALSE)
+
+
+NS1<-read.table("NSCLC clinical.csv",sep=",",header=TRUE,stringsAsFactors=FALSE)
+NS2<-subset(NS1,NS1$Patients %in% colnames(LUAD6)[-1],select=c(1:16))
+NS3<-setdiff(colnames(LUAD6),NS2$Patients)[-1]
+
+LUAD7<-dplyr::select(LUAD6,-one_of(NS3))
+
+rownames(LUAD7)<-LUAD7$GeneID
+
+IAAD<-subset(NS2,NS2$pStage=="IA" & NS2$Histology=="AD",select=c(1:16))
+
+
+
+
+
+IAAD1<-dplyr::select(LUAD7[,-1],one_of(IAAD$Patients))
+
+IAAD2<-as.data.frame(t(scale(t(IAAD1))))
+
+
+quantile(IAAD2[1,])
+mean(as.numeric(IAAD2[1,]))
+sd(as.numeric(IAAD2[1,]))
+summary(as.numeric(IAAD2[1,]))
+var(as.numeric(IAAD2[1,]))
+
+LUAD7a<-IAAD2
+LUAD7a$GeneID<-rownames(LUAD7a)
+LUAD7a<-LUAD7a[,c(ncol(LUAD7a),(1:(ncol(LUAD7a)-1)))]
+write.table(LUAD7a,"LUAD IA singlegene r2 mami z.csv",sep=",",col.names=T,row.names = F)
+
+LAS<-read.table("kall LUAD lasso.csv",sep=",",header=TRUE,stringsAsFactors=FALSE)
+
+fan1<-subset(LUAD7a,LUAD7a$GeneID %in% LAS$GeneID,select=c(1:ncol(LUAD7a)))
+LAS1<-subset(LAS,LAS$GeneID %in% fan1$GeneID,select=c(1:2))
+
+identical(as.numeric(fan1$GeneID),as.numeric(LAS1$GeneID))
+
+rownames(fan1)<-fan1$GeneID
+fan2<-fan1[,-1]
+
+fan3<-as.data.frame(sapply(fan2,function(x)sum(x*LAS1$coef)))
+fan3$Patients<-rownames(fan3)
+colnames(fan3)<-c("LAS","Patients")
+
+lR1<-merge(NS1,fan3,by=c("Patients"))
+write.table(lR1,"NSCLC LASSO singlegene r2 mami z.csv",sep=",",col.names=T,row.names = F)
+
+
+
+lR1<-read.table("NSCLC LASSO singlegene r2 mami z.csv",
+                sep=",",header=TRUE,stringsAsFactors=FALSE)
+g1<-subset(lR1,Histology=="AD",select=c(1:17)) ##845
+
+table(g1$pStage)
+g1$pstage1[g1$pStage=="IA"]<-"IA"
+
+table(g1$pstage1)##IA  845 
+
+g1$OS.time<-as.numeric(g1$OS.time)
+g1$OS.status<-as.numeric(g1$OS.status)
+g1$PFS.time<-as.numeric(g1$PFS.time)
+g1$PFS.status<-as.numeric(g1$PFS.status)
+
+options(digits=3)
+##5 year
+LUAD5<-subset(g1,g1$pstage1=="IA",select=c(1:18))
+LUAD5$Typesur[LUAD5$OS.time > 60]<-"Low risk"
+LUAD5$Typesur[LUAD5$OS.time < 60 & LUAD5$OS.status=="1"]<-"High risk"
+LUAD5$Typesur[LUAD5$OS.time < 60 & LUAD5$OS.status=="0"]<-"Unknow"
+table(LUAD5$Typesur)
+table(LUAD5$Dataset,LUAD5$Typesur)
+
+
+zhe1<-subset(LUAD5,LUAD5$Typesur!="Unknow",select=c(1:19))
+options(digits=22)
+zhe2<-roc(zhe1$Typesur,zhe1$LAS)
+auc(zhe2)###  Area under the curve: 0.600
+ci(zhe2)#95% CI: 0.544-0.656 (DeLong)
+pdf("LUAD IA score 5 year singlegene r2 mami Z.pdf",width=5, height=5)
+plot(zhe2,print.auc=FALSE, auc.polygon=TRUE, max.auc.polygon=TRUE,
+     auc.polygon.col="#EED5D2", print.thres=TRUE,font=2,
+     main="",cex.main=2,
+     font.lab=2,font.axis=2,cex.lab=1.8,cex.axis=1.4)
+text(0.45,0.1,"AUC:0.600 \n 95% CI: 0.544-0.656",
+     cex=1.6,font=2)
+dev.off()
+
+
+##(4)
+## (y)/median(y)
+LUAD6<-read.table("NSCLC matrix gene z med.csv",
+                  sep=",",header=TRUE,stringsAsFactors=FALSE)
+
+
+NS1<-read.table("NSCLC clinical.csv",sep=",",header=TRUE,stringsAsFactors=FALSE)
+NS2<-subset(NS1,NS1$Patients %in% colnames(LUAD6)[-1],select=c(1:16))
+NS3<-setdiff(colnames(LUAD6),NS2$Patients)[-1]
+
+LUAD7<-dplyr::select(LUAD6,-one_of(NS3))
+
+rownames(LUAD7)<-LUAD7$GeneID
+
+IAAD<-subset(NS2,NS2$pStage=="IA" & NS2$Histology=="AD",select=c(1:16))
+
+
+
+
+
+IAAD1<-dplyr::select(LUAD7[,-1],one_of(IAAD$Patients))
+
+IAAD2<-as.data.frame(t(scale(t(IAAD1))))
+
+
+quantile(IAAD2[1,])
+mean(as.numeric(IAAD2[1,]))
+sd(as.numeric(IAAD2[1,]))
+summary(as.numeric(IAAD2[1,]))
+var(as.numeric(IAAD2[1,]))
+
+LUAD7a<-IAAD2
+LUAD7a$GeneID<-rownames(LUAD7a)
+LUAD7a<-LUAD7a[,c(ncol(LUAD7a),(1:(ncol(LUAD7a)-1)))]
+write.table(LUAD7a,"LUAD IA singlegene r2 med z.csv",sep=",",col.names=T,row.names = F)
+
+LAS<-read.table("kall LUAD lasso.csv",sep=",",header=TRUE,stringsAsFactors=FALSE)
+
+fan1<-subset(LUAD7a,LUAD7a$GeneID %in% LAS$GeneID,select=c(1:ncol(LUAD7a)))
+LAS1<-subset(LAS,LAS$GeneID %in% fan1$GeneID,select=c(1:2))
+
+identical(as.numeric(fan1$GeneID),as.numeric(LAS1$GeneID))
+
+rownames(fan1)<-fan1$GeneID
+fan2<-fan1[,-1]
+
+fan3<-as.data.frame(sapply(fan2,function(x)sum(x*LAS1$coef)))
+fan3$Patients<-rownames(fan3)
+colnames(fan3)<-c("LAS","Patients")
+
+lR1<-merge(NS1,fan3,by=c("Patients"))
+write.table(lR1,"NSCLC LASSO singlegene r2 med z.csv",sep=",",col.names=T,row.names = F)
+
+
+
+lR1<-read.table("NSCLC LASSO singlegene r2 med z.csv",
+                sep=",",header=TRUE,stringsAsFactors=FALSE)
+g1<-subset(lR1,Histology=="AD",select=c(1:17)) ##845
+
+table(g1$pStage)
+g1$pstage1[g1$pStage=="IA"]<-"IA"
+
+table(g1$pstage1)##IA  845 
+
+g1$OS.time<-as.numeric(g1$OS.time)
+g1$OS.status<-as.numeric(g1$OS.status)
+g1$PFS.time<-as.numeric(g1$PFS.time)
+g1$PFS.status<-as.numeric(g1$PFS.status)
+
+options(digits=3)
+##5 year
+LUAD5<-subset(g1,g1$pstage1=="IA",select=c(1:18))
+LUAD5$Typesur[LUAD5$OS.time > 60]<-"Low risk"
+LUAD5$Typesur[LUAD5$OS.time < 60 & LUAD5$OS.status=="1"]<-"High risk"
+LUAD5$Typesur[LUAD5$OS.time < 60 & LUAD5$OS.status=="0"]<-"Unknow"
+table(LUAD5$Typesur)
+table(LUAD5$Dataset,LUAD5$Typesur)
+
+
+zhe1<-subset(LUAD5,LUAD5$Typesur!="Unknow",select=c(1:19))
+options(digits=22)
+zhe2<-roc(zhe1$Typesur,zhe1$LAS)
+auc(zhe2)###  Area under the curve: 0.670
+ci(zhe2)#95% CI: 0.616-0.724 (DeLong)
+pdf("LUAD IA score 5 year singlegene r2 med Z.pdf",width=5, height=5)
+plot(zhe2,print.auc=FALSE, auc.polygon=TRUE, max.auc.polygon=TRUE,
+     auc.polygon.col="#EED5D2", print.thres=TRUE,font=2,
+     main="",cex.main=2,
+     font.lab=2,font.axis=2,cex.lab=1.8,cex.axis=1.4)
+text(0.45,0.1,"AUC:0.670 \n 95% CI: 0.616-0.724",
+     cex=1.6,font=2)
+dev.off()
+
+
+
+
+
+###分析845例UQ数据，逐一和845例已知建模矩阵进行Zscale标化，再将845例矩阵用于重新建模
+
+##建模数据采用标准化数据 选择IA
+LUAD6<-read.table("NSCLC matrix z new.csv",
+                  sep=",",header=TRUE,stringsAsFactors=FALSE)
+
+NS1<-read.table("NSCLC clinical.csv",sep=",",header=TRUE,stringsAsFactors=FALSE)
+NS2<-subset(NS1,NS1$Patients %in% colnames(LUAD6)[-1],select=c(1:16))
+NS3<-setdiff(colnames(LUAD6),NS2$Patients)[-1]
+
+LUAD7<-dplyr::select(LUAD6,-one_of(NS3))  ##Z转化
+
+f1<-read.table("LUAD IA H L U.csv",sep=",",header=TRUE,stringsAsFactors=FALSE)
+f2<-LUAD7
+rownames(f2)<-f2$GeneID
+f3<-dplyr::select(f2,one_of(f1$Patients)) ##845
+
+
+##训练UQ
+LUAD6x<-read.table("NSCLC matrix gene z uq.csv",
+                  sep=",",header=TRUE,stringsAsFactors=FALSE)
+
+
+NS1<-read.table("NSCLC clinical.csv",sep=",",header=TRUE,stringsAsFactors=FALSE)
+NS2<-subset(NS1,NS1$Patients %in% colnames(LUAD6x)[-1],select=c(1:16))
+NS3<-setdiff(colnames(LUAD6x),NS2$Patients)[-1]
+
+LUAD7x<-dplyr::select(LUAD6x,-one_of(NS3))
+
+rownames(LUAD7x)<-LUAD7x$GeneID
+
+IAAD<-subset(NS2,NS2$pStage=="IA" & NS2$Histology=="AD",select=c(1:16))
+
+IAAD1<-dplyr::select(LUAD7x[,-1],one_of(IAAD$Patients))
+
+IAAD1[c(1:3),c(1:3)]
+
+identical(rownames(f3),rownames(IAAD1))
+
+
+identical(colnames(f3),colnames(IAAD1))
+
+
+for(i in seq_along(IAAD1)) {}
+
+
+xu1<-sapply(IAAD1,function(x)x<-as.data.frame(t(scale(t(cbind(x,f3)))))[,1])
+xu2<-as.data.frame(xu1)
+rownames(xu2)<-rownames(f3)
+xu2[c(1:3),c(1:3)]
+identical(colnames(xu2),colnames(IAAD1))
+LUAD7a<-xu2
+LUAD7a$GeneID<-rownames(LUAD7a)
+LUAD7a<-LUAD7a[,c(ncol(LUAD7a),(1:(ncol(LUAD7a)-1)))]
+write.table(LUAD7a,"LUAD IA singlegene jian1.csv",sep=",",col.names=T,row.names = F)
+
+LAS<-read.table("kall LUAD lasso.csv",sep=",",header=TRUE,stringsAsFactors=FALSE)
+
+fan1<-subset(LUAD7a,LUAD7a$GeneID %in% LAS$GeneID,select=c(1:ncol(LUAD7a)))
+LAS1<-subset(LAS,LAS$GeneID %in% fan1$GeneID,select=c(1:2))
+
+identical(as.numeric(fan1$GeneID),as.numeric(LAS1$GeneID))
+
+rownames(fan1)<-fan1$GeneID
+fan2<-fan1[,-1]
+
+fan3<-as.data.frame(sapply(fan2,function(x)sum(x*LAS1$coef)))
+fan3$Patients<-rownames(fan3)
+colnames(fan3)<-c("LAS","Patients")
+
+lR1<-merge(NS1,fan3,by=c("Patients"))
+write.table(lR1,"NSCLC LASSO singlegene jian1.csv",sep=",",col.names=T,row.names = F)
+
+
+
+lR1<-read.table("NSCLC LASSO singlegene jian1.csv",
+                sep=",",header=TRUE,stringsAsFactors=FALSE)
+g1<-subset(lR1,Histology=="AD",select=c(1:17)) ##845
+
+table(g1$pStage)
+g1$pstage1[g1$pStage=="IA"]<-"IA"
+
+table(g1$pstage1)##IA  845 
+
+g1$OS.time<-as.numeric(g1$OS.time)
+g1$OS.status<-as.numeric(g1$OS.status)
+g1$PFS.time<-as.numeric(g1$PFS.time)
+g1$PFS.status<-as.numeric(g1$PFS.status)
+
+options(digits=3)
+##5 year
+LUAD5<-subset(g1,g1$pstage1=="IA",select=c(1:18))
+LUAD5$Typesur[LUAD5$OS.time > 60]<-"Low risk"
+LUAD5$Typesur[LUAD5$OS.time < 60 & LUAD5$OS.status=="1"]<-"High risk"
+LUAD5$Typesur[LUAD5$OS.time < 60 & LUAD5$OS.status=="0"]<-"Unknow"
+table(LUAD5$Typesur)
+table(LUAD5$Dataset,LUAD5$Typesur)
+
+
+zhe1<-subset(LUAD5,LUAD5$Typesur!="Unknow",select=c(1:19))
+options(digits=22)
+zhe2<-roc(zhe1$Typesur,zhe1$LAS)
+auc(zhe2)###  Area under the curve: 0.782
+ci(zhe2)#95% CI: 0.736-0.829 (DeLong)
+pdf("LUAD IA score 5 year singlegene jian1.pdf",width=5, height=5)
+plot(zhe2,print.auc=FALSE, auc.polygon=TRUE, max.auc.polygon=TRUE,
+     auc.polygon.col="#EED5D2", print.thres=TRUE,font=2,
+     main="",cex.main=2,
+     font.lab=2,font.axis=2,cex.lab=1.8,cex.axis=1.4)
+text(0.45,0.1,"AUC:0.782 \n 95% CI: 0.736-0.829",
+     cex=1.6,font=2)
+dev.off()
+
+
+
+##3 year
+LUAD5<-subset(g1,g1$pstage1=="IA",select=c(1:18))
+LUAD5$Typesur[LUAD5$OS.time > 36]<-"Low risk"
+LUAD5$Typesur[LUAD5$OS.time < 36 & LUAD5$OS.status=="1"]<-"High risk"
+LUAD5$Typesur[LUAD5$OS.time < 36 & LUAD5$OS.status=="0"]<-"Unknow"
+table(LUAD5$Typesur)
+table(LUAD5$Dataset,LUAD5$Typesur)
+
+
+zhe1<-subset(LUAD5,LUAD5$Typesur!="Unknow",select=c(1:19))
+options(digits=22)
+zhe2<-roc(zhe1$Typesur,zhe1$LAS)
+auc(zhe2)###  Area under the curve: 0.759
+ci(zhe2)#95% CI: 0.711-0.807 (DeLong)
+pdf("LUAD IA score 3 year singlegene jian1.pdf",width=5, height=5)
+plot(zhe2,print.auc=FALSE, auc.polygon=TRUE, max.auc.polygon=TRUE,
+     auc.polygon.col="#EED5D2", print.thres=TRUE,font=2,
+     main="",cex.main=2,
+     font.lab=2,font.axis=2,cex.lab=1.8,cex.axis=1.4)
+text(0.45,0.1,"AUC:0.759 \n 95% CI: 0.711-0.807",
+     cex=1.6,font=2)
+dev.off()
+
+
+##1 year
+LUAD5<-subset(g1,g1$pstage1=="IA",select=c(1:18))
+LUAD5$Typesur[LUAD5$OS.time > 12]<-"Low risk"
+LUAD5$Typesur[LUAD5$OS.time < 12 & LUAD5$OS.status=="1"]<-"High risk"
+LUAD5$Typesur[LUAD5$OS.time < 12 & LUAD5$OS.status=="0"]<-"Unknow"
+table(LUAD5$Typesur)
+table(LUAD5$Dataset,LUAD5$Typesur)
+
+
+zhe1<-subset(LUAD5,LUAD5$Typesur!="Unknow",select=c(1:19))
+options(digits=22)
+zhe2<-roc(zhe1$Typesur,zhe1$LAS)
+auc(zhe2)###  Area under the curve: 0.704
+ci(zhe2)#95% CI: 0.620-0.788 (DeLong)
+pdf("LUAD IA score 1 year singlegene jian1.pdf",width=5, height=5)
+plot(zhe2,print.auc=FALSE, auc.polygon=TRUE, max.auc.polygon=TRUE,
+     auc.polygon.col="#EED5D2", print.thres=TRUE,font=2,
+     main="",cex.main=2,
+     font.lab=2,font.axis=2,cex.lab=1.8,cex.axis=1.4)
+text(0.45,0.1,"AUC:0.704 \n 95% CI: 0.620-0.788",
+     cex=1.6,font=2)
+dev.off()
+
+
+
+
+
+##建模数据采用标准化数据  逐步选择  整个LUAD   IA+IB-II
+LUAD6<-read.table("NSCLC matrix z new.csv",
+                  sep=",",header=TRUE,stringsAsFactors=FALSE)
+
+NS1<-read.table("NSCLC clinical.csv",sep=",",header=TRUE,stringsAsFactors=FALSE)
+NS2<-subset(NS1,NS1$Patients %in% colnames(LUAD6)[-1],select=c(1:16))
+NS3<-setdiff(colnames(LUAD6),NS2$Patients)[-1]
+
+LUAD7<-dplyr::select(LUAD6,-one_of(NS3))  ##Z转化
+
+
+
+###整个AD 2484
+f1<-subset(NS2,NS2$Histology=="AD",select=c(1:16))
+####AD+I+IB_II
+f1<-subset(NS2,NS2$Histology=="AD" & NS2$pStage %in% c("IA","I",
+                  "IB","II","IIA","IIB"),
+           select=c(1:16))
+
+f2<-LUAD7
+rownames(f2)<-f2$GeneID
+f3<-dplyr::select(f2,one_of(f1$Patients)) 
+
+
+##训练UQ
+LUAD6x<-read.table("NSCLC matrix gene z uq.csv",
+                   sep=",",header=TRUE,stringsAsFactors=FALSE)
+
+
+NS1<-read.table("NSCLC clinical.csv",sep=",",header=TRUE,stringsAsFactors=FALSE)
+NS2<-subset(NS1,NS1$Patients %in% colnames(LUAD6x)[-1],select=c(1:16))
+NS3<-setdiff(colnames(LUAD6x),NS2$Patients)[-1]
+
+LUAD7x<-dplyr::select(LUAD6x,-one_of(NS3))
+
+rownames(LUAD7x)<-LUAD7x$GeneID
+
+IAAD<-subset(NS2,NS2$pStage=="IA" & NS2$Histology=="AD",select=c(1:16))
+
+IAAD1<-dplyr::select(LUAD7x[,-1],one_of(IAAD$Patients))
+
+IAAD1[c(1:3),c(1:3)]
+
+identical(rownames(f3),rownames(IAAD1))
+
+
+identical(colnames(f3),colnames(IAAD1))
+
+
+
+xu1<-sapply(IAAD1,function(x)x<-as.data.frame(t(scale(t(cbind(x,f3)))))[,1])
+xu2<-as.data.frame(xu1)
+rownames(xu2)<-rownames(f3)
+xu2[c(1:3),c(1:3)]
+identical(colnames(xu2),colnames(IAAD1))
+LUAD7a<-xu2
+LUAD7a$GeneID<-rownames(LUAD7a)
+LUAD7a<-LUAD7a[,c(ncol(LUAD7a),(1:(ncol(LUAD7a)-1)))]
+
+##AD
+write.table(LUAD7a,"LUAD IA singlegene jian3.csv",sep=",",col.names=T,row.names = F)
+LUAD7a<-read.table("LUAD IA singlegene jian3.csv",sep=",",header=TRUE,stringsAsFactors=FALSE)
+
+##I II
+write.table(LUAD7a,"LUAD IA singlegene jian4.csv",sep=",",col.names=T,row.names = F)
+
+LAS<-read.table("kall LUAD lasso.csv",sep=",",header=TRUE,stringsAsFactors=FALSE)
+
+fan1<-subset(LUAD7a,LUAD7a$GeneID %in% LAS$GeneID,select=c(1:ncol(LUAD7a)))
+LAS1<-subset(LAS,LAS$GeneID %in% fan1$GeneID,select=c(1:2))
+
+identical(as.numeric(fan1$GeneID),as.numeric(LAS1$GeneID))
+
+rownames(fan1)<-fan1$GeneID
+fan2<-fan1[,-1]
+
+fan3<-as.data.frame(sapply(fan2,function(x)sum(x*LAS1$coef)))
+fan3$Patients<-rownames(fan3)
+colnames(fan3)<-c("LAS","Patients")
+
+lR1<-merge(NS1,fan3,by=c("Patients"))
+##AD
+write.table(lR1,"NSCLC LASSO singlegene jian3.csv",sep=",",col.names=T,row.names = F)
+##I+II
+write.table(lR1,"NSCLC LASSO singlegene jian4.csv",sep=",",col.names=T,row.names = F)
+
+
+
+##AD
+lR1<-read.table("NSCLC LASSO singlegene jian3.csv",
+                sep=",",header=TRUE,stringsAsFactors=FALSE)
+##I+II
+lR1<-read.table("NSCLC LASSO singlegene jian4.csv",
+                sep=",",header=TRUE,stringsAsFactors=FALSE)
+
+
+g1<-subset(lR1,Histology=="AD",select=c(1:17)) ##845
+
+table(g1$pStage)
+g1$pstage1[g1$pStage=="IA"]<-"IA"
+
+table(g1$pstage1)##IA  845 
+
+g1$OS.time<-as.numeric(g1$OS.time)
+g1$OS.status<-as.numeric(g1$OS.status)
+g1$PFS.time<-as.numeric(g1$PFS.time)
+g1$PFS.status<-as.numeric(g1$PFS.status)
+
+options(digits=3)
+##5 year
+LUAD5<-subset(g1,g1$pstage1=="IA",select=c(1:18))
+LUAD5$Typesur[LUAD5$OS.time > 60]<-"Low risk"
+LUAD5$Typesur[LUAD5$OS.time < 60 & LUAD5$OS.status=="1"]<-"High risk"
+LUAD5$Typesur[LUAD5$OS.time < 60 & LUAD5$OS.status=="0"]<-"Unknow"
+table(LUAD5$Typesur)
+table(LUAD5$Dataset,LUAD5$Typesur)
+
+
+
+zhe1<-subset(LUAD5,LUAD5$Typesur!="Unknow",select=c(1:19))
+options(digits=22)
+zhe2<-roc(zhe1$Typesur,zhe1$LAS)
+auc(zhe2)###  Area under the curve: 0.787
+ci(zhe2)#95% CI: 0.742-0.833 (DeLong)
+pdf("LUAD IA score 5 year singlegene jian3.pdf",width=5, height=5)
+plot(zhe2,print.auc=FALSE, auc.polygon=TRUE, max.auc.polygon=TRUE,
+     auc.polygon.col="#EED5D2", print.thres=TRUE,font=2,
+     main="",cex.main=2,
+     font.lab=2,font.axis=2,cex.lab=1.8,cex.axis=1.4)
+text(0.45,0.1,"AUC:0.787 \n 95% CI: 0.742-0.833",
+     cex=1.6,font=2)
+dev.off()
+
+
+
+
+zhe1<-subset(LUAD5,LUAD5$Typesur!="Unknow",select=c(1:19))
+options(digits=22)
+zhe2<-roc(zhe1$Typesur,zhe1$LAS)
+auc(zhe2)###  Area under the curve: 0.784
+ci(zhe2)#95% CI: 0.738-0.830 (DeLong)
+pdf("LUAD IA score 5 year singlegene jian4.pdf",width=5, height=5)
+plot(zhe2,print.auc=FALSE, auc.polygon=TRUE, max.auc.polygon=TRUE,
+     auc.polygon.col="#EED5D2", print.thres=TRUE,font=2,
+     main="",cex.main=2,
+     font.lab=2,font.axis=2,cex.lab=1.8,cex.axis=1.4)
+text(0.45,0.1,"AUC:0.784 \n 95% CI: 0.738-0.830",
+     cex=1.6,font=2)
+dev.off()
+
+
+
+
+
+
+
+##3 year
+LUAD5<-subset(g1,g1$pstage1=="IA",select=c(1:18))
+LUAD5$Typesur[LUAD5$OS.time > 36]<-"Low risk"
+LUAD5$Typesur[LUAD5$OS.time < 36 & LUAD5$OS.status=="1"]<-"High risk"
+LUAD5$Typesur[LUAD5$OS.time < 36 & LUAD5$OS.status=="0"]<-"Unknow"
+table(LUAD5$Typesur)
+table(LUAD5$Dataset,LUAD5$Typesur)
+
+
+zhe1<-subset(LUAD5,LUAD5$Typesur!="Unknow",select=c(1:19))
+options(digits=22)
+zhe2<-roc(zhe1$Typesur,zhe1$LAS)
+auc(zhe2)###  Area under the curve: 0.764
+ci(zhe2)#95% CI: 0.716-0.811 (DeLong)
+pdf("LUAD IA score 3 year singlegene jian3.pdf",width=5, height=5)
+plot(zhe2,print.auc=FALSE, auc.polygon=TRUE, max.auc.polygon=TRUE,
+     auc.polygon.col="#EED5D2", print.thres=TRUE,font=2,
+     main="",cex.main=2,
+     font.lab=2,font.axis=2,cex.lab=1.8,cex.axis=1.4)
+text(0.45,0.1,"AUC:0.764 \n 95% CI: 0.716-0.811",
+     cex=1.6,font=2)
+dev.off()
+
+
+zhe1<-subset(LUAD5,LUAD5$Typesur!="Unknow",select=c(1:19))
+options(digits=22)
+zhe2<-roc(zhe1$Typesur,zhe1$LAS)
+auc(zhe2)###  Area under the curve: 0.763
+ci(zhe2)#95% CI: 0.715-0.810 (DeLong)
+pdf("LUAD IA score 3 year singlegene jian4.pdf",width=5, height=5)
+plot(zhe2,print.auc=FALSE, auc.polygon=TRUE, max.auc.polygon=TRUE,
+     auc.polygon.col="#EED5D2", print.thres=TRUE,font=2,
+     main="",cex.main=2,
+     font.lab=2,font.axis=2,cex.lab=1.8,cex.axis=1.4)
+text(0.45,0.1,"AUC:0.763 \n 95% CI: 0.715-0.810",
+     cex=1.6,font=2)
+dev.off()
+
+
+##1 year
+LUAD5<-subset(g1,g1$pstage1=="IA",select=c(1:18))
+LUAD5$Typesur[LUAD5$OS.time > 12]<-"Low risk"
+LUAD5$Typesur[LUAD5$OS.time < 12 & LUAD5$OS.status=="1"]<-"High risk"
+LUAD5$Typesur[LUAD5$OS.time < 12 & LUAD5$OS.status=="0"]<-"Unknow"
+table(LUAD5$Typesur)
+table(LUAD5$Dataset,LUAD5$Typesur)
+
+
+zhe1<-subset(LUAD5,LUAD5$Typesur!="Unknow",select=c(1:19))
+options(digits=22)
+zhe2<-roc(zhe1$Typesur,zhe1$LAS)
+auc(zhe2)###  Area under the curve: 0.698
+ci(zhe2)#95% CI: 0.613-0.782 (DeLong)
+pdf("LUAD IA score 1 year singlegene jian3.pdf",width=5, height=5)
+plot(zhe2,print.auc=FALSE, auc.polygon=TRUE, max.auc.polygon=TRUE,
+     auc.polygon.col="#EED5D2", print.thres=TRUE,font=2,
+     main="",cex.main=2,
+     font.lab=2,font.axis=2,cex.lab=1.8,cex.axis=1.4)
+text(0.45,0.1,"AUC:0.697 \n 95% CI: 0.613-0.782",
+     cex=1.6,font=2)
+dev.off()
+
+
+
+zhe1<-subset(LUAD5,LUAD5$Typesur!="Unknow",select=c(1:19))
+options(digits=22)
+zhe2<-roc(zhe1$Typesur,zhe1$LAS)
+auc(zhe2)###  Area under the curve: 0.699
+ci(zhe2)#95% CI: 0.615-0.784 (DeLong)
+pdf("LUAD IA score 1 year singlegene jian4.pdf",width=5, height=5)
+plot(zhe2,print.auc=FALSE, auc.polygon=TRUE, max.auc.polygon=TRUE,
+     auc.polygon.col="#EED5D2", print.thres=TRUE,font=2,
+     main="",cex.main=2,
+     font.lab=2,font.axis=2,cex.lab=1.8,cex.axis=1.4)
+text(0.45,0.1,"AUC:0.699 \n 95% CI: 0.615-0.784",
+     cex=1.6,font=2)
+dev.off()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+##建模数据采用原始矩阵
+LUAD6<-read.table("NSCLC matrix new.csv",
+                  sep=",",header=TRUE,stringsAsFactors=FALSE)
+
+NS1<-read.table("NSCLC clinical.csv",sep=",",header=TRUE,stringsAsFactors=FALSE)
+NS2<-subset(NS1,NS1$Patients %in% colnames(LUAD6)[-1],select=c(1:16))
+NS3<-setdiff(colnames(LUAD6),NS2$Patients)[-1]
+
+LUAD7<-dplyr::select(LUAD6,-one_of(NS3))  ##Z转化
+LUAD7$GeneID<-factor(LUAD7$GeneID,levels=as.factor(LUAD7x$GeneID))
+LUAD7m<-LUAD7[order(LUAD7$GeneID),]
+
+
+f1<-read.table("LUAD IA H L U.csv",sep=",",header=TRUE,stringsAsFactors=FALSE)
+f2<-LUAD7m
+rownames(f2)<-f2$GeneID
+f3<-dplyr::select(f2,one_of(f1$Patients)) ##845
+
+
+##训练UQ
+LUAD6x<-read.table("NSCLC matrix gene z uq.csv",
+                   sep=",",header=TRUE,stringsAsFactors=FALSE)
+
+
+NS1<-read.table("NSCLC clinical.csv",sep=",",header=TRUE,stringsAsFactors=FALSE)
+NS2<-subset(NS1,NS1$Patients %in% colnames(LUAD6x)[-1],select=c(1:16))
+NS3<-setdiff(colnames(LUAD6x),NS2$Patients)[-1]
+
+LUAD7x<-dplyr::select(LUAD6x,-one_of(NS3))
+
+rownames(LUAD7x)<-LUAD7x$GeneID
+
+IAAD<-subset(NS2,NS2$pStage=="IA" & NS2$Histology=="AD",select=c(1:16))
+
+IAAD1<-dplyr::select(LUAD7x[,-1],one_of(IAAD$Patients))
+
+IAAD1[c(1:3),c(1:3)]
+
+identical(rownames(f3),rownames(IAAD1))
+
+
+identical(colnames(f3),colnames(IAAD1))
+
+
+xu1<-sapply(IAAD1,function(x)x<-as.data.frame(t(scale(t(cbind(x,f3)))))[,1])
+xu2<-as.data.frame(xu1)
+rownames(xu2)<-rownames(f3)
+xu2[c(1:3),c(1:3)]
+identical(colnames(xu2),colnames(IAAD1))
+LUAD7a<-xu2
+LUAD7a$GeneID<-rownames(LUAD7a)
+LUAD7a<-LUAD7a[,c(ncol(LUAD7a),(1:(ncol(LUAD7a)-1)))]
+write.table(LUAD7a,"LUAD IA singlegene jian2.csv",sep=",",col.names=T,row.names = F)
+
+LAS<-read.table("kall LUAD lasso.csv",sep=",",header=TRUE,stringsAsFactors=FALSE)
+
+fan1<-subset(LUAD7a,LUAD7a$GeneID %in% LAS$GeneID,select=c(1:ncol(LUAD7a)))
+LAS1<-subset(LAS,LAS$GeneID %in% fan1$GeneID,select=c(1:2))
+
+identical(as.numeric(fan1$GeneID),as.numeric(LAS1$GeneID))
+
+rownames(fan1)<-fan1$GeneID
+fan2<-fan1[,-1]
+
+fan3<-as.data.frame(sapply(fan2,function(x)sum(x*LAS1$coef)))
+fan3$Patients<-rownames(fan3)
+colnames(fan3)<-c("LAS","Patients")
+
+lR1<-merge(NS1,fan3,by=c("Patients"))
+write.table(lR1,"NSCLC LASSO singlegene jian2.csv",sep=",",col.names=T,row.names = F)
+
+
+
+lR1<-read.table("NSCLC LASSO singlegene jian2.csv",
+                sep=",",header=TRUE,stringsAsFactors=FALSE)
+g1<-subset(lR1,Histology=="AD",select=c(1:17)) ##845
+
+table(g1$pStage)
+g1$pstage1[g1$pStage=="IA"]<-"IA"
+
+table(g1$pstage1)##IA  845 
+
+g1$OS.time<-as.numeric(g1$OS.time)
+g1$OS.status<-as.numeric(g1$OS.status)
+g1$PFS.time<-as.numeric(g1$PFS.time)
+g1$PFS.status<-as.numeric(g1$PFS.status)
+
+options(digits=3)
+##5 year
+LUAD5<-subset(g1,g1$pstage1=="IA",select=c(1:18))
+LUAD5$Typesur[LUAD5$OS.time > 60]<-"Low risk"
+LUAD5$Typesur[LUAD5$OS.time < 60 & LUAD5$OS.status=="1"]<-"High risk"
+LUAD5$Typesur[LUAD5$OS.time < 60 & LUAD5$OS.status=="0"]<-"Unknow"
+table(LUAD5$Typesur)
+table(LUAD5$Dataset,LUAD5$Typesur)
+
+
+zhe1<-subset(LUAD5,LUAD5$Typesur!="Unknow",select=c(1:19))
+options(digits=22)
+zhe2<-roc(zhe1$Typesur,zhe1$LAS)
+auc(zhe2)###  Area under the curve:  0.589
+ci(zhe2)#95% CI:  0.534-0.643 (DeLong)
+pdf("LUAD IA score 5 year singlegene jian2.pdf",width=5, height=5)
+plot(zhe2,print.auc=FALSE, auc.polygon=TRUE, max.auc.polygon=TRUE,
+     auc.polygon.col="#EED5D2", print.thres=TRUE,font=2,
+     main="",cex.main=2,
+     font.lab=2,font.axis=2,cex.lab=1.8,cex.axis=1.4)
+text(0.45,0.1,"AUC:0.589 \n 95% CI: 0.534-0.643",
+     cex=1.6,font=2)
+dev.off()
+
+
+
+##开发R包
+
+usethis::create_package("D:/data/data16/toypackages")
+devtools::load_all()
+usethis::use_data(a3ml)
+usethis::use_testthat()
+devtools::test()
+library(IAscore)
+test_check("IAsc")
+library(devtools)
+library(gert)
+devtools::document()
+library(devtools)
+devtools::document()
+devtools::load_all()
+devtools::run_examples()
+IAsc<-function(x){mean<-mean(x)}
+devtools::check()
+
+
+library(devtools)
+packageVersion("devtools")
+path <- "D:/data/data16/regexcite"
+dir.create(path)
+create_package(path)
+R.Version()
+install.packages(c("devtools","roxygen2","testthat","knitr"))
+install.packages("rstudioapi")
+rstudioapi::isAvailable("0.99.149")
+devtools::install_github("hadley/devtools")
+
+writeLines('PATH="${RTOOLS40_HOME}\\usr\\bin;${PATH}"', con = "~/.Renviron")
+Sys.which("make")
+install.packages("jsonlite", type = "source")
+
+library(devtools)
+has_devel()
+library(roxygen2)
+library(testthat)
+devtools::session_info()
+.libPaths()
+devtools::load_all()
+install.packages("formatR")
+formatR::tidy_dir("R")
+install.packages("lintr")
+lintr::lint_package()
+old<-options(stringsAsFactors = FALSE)
+on.exit(options(old),add=T)
+devtools::create("mypackage")
+use_git()
+
+sang<-function(x,y){x+y-1}
+sang(1,2)
+
+m1a$GeneID
+x$Patients<-rownames(x)
+colnames(x)<-c("LAS","Patients")
+
+IAGeneID<-c(15,222,267,667,1000,1121,1129,
+            1415,1573,1586,1997,2033,2072,
+            2184,2520,2817,2824,3176,3416,
+            3476,3633,3700,3772,3856,3875,
+            4017,4218,4862,4880,4883,5203,
+            5210,5372,5782,5977,5999,6203,
+            6251,6279,6283,6513,6524,6651,
+            6919,7031,7170,7189,7544,7551,
+            7586,8021,8027,8153,8178,8450,
+            8578,8848,8939,9168,9491,9514,
+            9575,9663,9989,10240,10397,10426,
+            10521,10782,11009,23191,25802,27238,
+            51561,58500)
+IAcoef<-c(-0.0221,-0.0376,0.2223,0.2037,-0.0899,-0.1543,
+          -0.1464,0.0642,0.0166,0.0546,0.1755,0.028,
+          -0.1783,0.0106,-0.0588,0.2129,0.059,0.0061,
+          0.0211,0.0588,0.0711,0.0304,0.0183,-0.0044,
+          -0.1936,-0.0172,-0.0427,-0.0016,-0.1036,0.0088,
+          -0.1273,-0.0191,0.1648,-0.2613,0.2156,-0.0144,
+          0.0525,-0.0298,-0.3584,-0.1109,-0.0819,0.003,
+          0.0415,0.0578,-0.1405,-0.0437,0.3219,-0.1158,
+          0.1239,-0.0179,-0.2753,-0.0901,-0.1449,-0.0243,
+          -0.0513,0.067,0.0182,-0.0131,-0.0183,-0.1753,
+          0.0997,-0.2127,0.1121,0.0898,0.1291,-0.1925,
+          -0.2287,0.0229,-0.1451,-0.0739,-0.0588,0.147,
+          -0.0604,-0.1098,0.1081)
+
+IAscore<-function(x){x<-subset(x,x$GeneID %in% IAGeneID,select=c(1:ncol(x)))
+x<-x[order(x$GeneID),]
+rownames(x)<-x$GeneID
+x<-as.data.frame(t(scale(t(x[,-1]))))
+x<-as.data.frame(sapply(x,function(y)sum(y*IAcoef)))
+x$Patients<-rownames(x)
+colnames(x)<-c("LAS","Patients")
+x}
+

@@ -1,0 +1,23 @@
+{
+    "collab_server" : "",
+    "contents" : "",
+    "created" : 1657329615390.000,
+    "dirty" : false,
+    "encoding" : "CP936",
+    "folds" : "",
+    "hash" : "0",
+    "id" : "FAB01859",
+    "lastKnownWriteTime" : 1657329965,
+    "last_content_update" : 1657329965060,
+    "path" : "D:/data/data16/IA score/earlydefen/R/earlydefen.R",
+    "project_path" : "R/earlydefen.R",
+    "properties" : {
+        "cursorPosition" : "5,15",
+        "scrollLine" : "0",
+        "tempName" : "Untitled1"
+    },
+    "relative_order" : 1,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_source"
+}

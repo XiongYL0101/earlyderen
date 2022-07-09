@@ -1,0 +1,23 @@
+{
+    "collab_server" : "",
+    "contents" : "",
+    "created" : 1657329980071.000,
+    "dirty" : false,
+    "encoding" : "CP936",
+    "folds" : "",
+    "hash" : "676867777",
+    "id" : "95054FBD",
+    "lastKnownWriteTime" : 1657330161,
+    "last_content_update" : 1657330161440,
+    "path" : "D:/data/data16/IA score/earlydefen/R/EAR.R",
+    "project_path" : "R/EAR.R",
+    "properties" : {
+        "cursorPosition" : "7,15",
+        "scrollLine" : "0",
+        "tempName" : "Untitled1"
+    },
+    "relative_order" : 3,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_source"
+}
